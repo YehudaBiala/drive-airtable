@@ -1,10 +1,15 @@
 import os
+import sys
 import io
 import base64
 import requests
 import tempfile
 import datetime
 import json
+
+# Add local lib directory to Python path for installed packages
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
+
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
