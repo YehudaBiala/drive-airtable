@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+PRODUCTION SERVER - Drive-Airtable Vision Integration
+===================================================
+This is the DEFINITIVE production server version for Cloudways deployment.
+Last Updated: 2025-07-03
+Added: Security improvements, logging, request validation
+
+Deploy this file to: ~/public_html/drive-airtable/
+Run with: python3 app.py
+"""
+
 import os
 import sys
 import io
@@ -6,6 +18,10 @@ import requests
 import tempfile
 import datetime
 import json
+import hashlib
+import hmac
+import logging
+from datetime import datetime as dt
 
 # Add local lib directory to Python path for installed packages
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
@@ -17,7 +33,26 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.cloud import vision
 from dotenv import load_dotenv
 
-load_dotenv()
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def load_env():
+    """Load environment variables from .env file"""
+    env_file = '.env'
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value.strip()
+        logger.info("Environment variables loaded from .env file")
+
+load_env()
 
 app = Flask(__name__)
 
@@ -28,9 +63,46 @@ AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
 AIRTABLE_TABLE_NAME = os.getenv('AIRTABLE_TABLE_NAME', 'Files')
 TEMP_FILES_DIR = os.getenv('TEMP_FILES_DIR', './temp_files')
 DEBUG_SAVE_FILES = os.getenv('DEBUG_SAVE_FILES', 'false').lower() == 'true'
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')  # Optional webhook validation
 
 # Ensure temp directory exists
 os.makedirs(TEMP_FILES_DIR, exist_ok=True)
+
+def validate_request_data(data, required_fields):
+    """Validate that request contains required fields"""
+    if not data:
+        return False, "No data provided"
+    
+    missing_fields = [field for field in required_fields if not data.get(field)]
+    if missing_fields:
+        return False, f"Missing required fields: {', '.join(missing_fields)}"
+    
+    return True, None
+
+def validate_webhook_signature(request_data, signature_header):
+    """Validate webhook signature if WEBHOOK_SECRET is set"""
+    if not WEBHOOK_SECRET:
+        return True  # Skip validation if no secret is configured
+    
+    if not signature_header:
+        logger.warning("Webhook signature missing")
+        return False
+    
+    # Generate expected signature
+    expected_signature = hmac.new(
+        WEBHOOK_SECRET.encode('utf-8'),
+        request_data,
+        hashlib.sha256
+    ).hexdigest()
+    
+    # Compare signatures
+    provided_signature = signature_header.replace('sha256=', '')
+    is_valid = hmac.compare_digest(expected_signature, provided_signature)
+    
+    if not is_valid:
+        logger.warning("Invalid webhook signature")
+    
+    return is_valid
 
 def get_drive_service():
     credentials = service_account.Credentials.from_service_account_file(
@@ -283,7 +355,22 @@ def download_and_analyze():
 def download_and_analyze_vision():
     """Download file from Drive, process with Vision API, and update Airtable"""
     try:
+        # Validate webhook signature if configured
+        if WEBHOOK_SECRET:
+            signature = request.headers.get('X-Hub-Signature-256')
+            if not validate_webhook_signature(request.get_data(), signature):
+                logger.warning("Invalid webhook signature for /download-and-analyze-vision")
+                return jsonify({"error": "Invalid signature"}), 401
+        
         data = request.json
+        logger.info(f"Vision processing request: file_id={data.get('file_id')}, record_id={data.get('record_id')}")
+        
+        # Validate required fields
+        is_valid, error_msg = validate_request_data(data, ['record_id'])
+        if not is_valid:
+            logger.warning(f"Invalid request data: {error_msg}")
+            return jsonify({"error": error_msg}), 400
+        
         file_id = data.get('file_id')
         record_id = data.get('record_id')
         drive_url = data.get('drive_url')
@@ -292,26 +379,41 @@ def download_and_analyze_vision():
         if not file_id and drive_url:
             if '/d/' in drive_url:
                 file_id = drive_url.split('/d/')[1].split('/')[0]
+                logger.info(f"Extracted file_id from URL: {file_id}")
             else:
+                logger.error("Could not extract file_id from drive_url")
                 return jsonify({"error": "Could not extract file_id from drive_url"}), 400
         
-        if not file_id or not record_id:
-            return jsonify({"error": "file_id and record_id are required"}), 400
+        if not file_id:
+            logger.error("No file_id provided")
+            return jsonify({"error": "file_id is required"}), 400
         
         # Download from Google Drive
+        logger.info(f"Downloading file {file_id} from Google Drive")
         file_content, file_name, error = download_file_from_drive(file_id)
         if error:
+            logger.error(f"Download failed for {file_id}: {error}")
             return jsonify({"error": f"Download failed: {error}"}), 500
         
+        logger.info(f"Successfully downloaded {file_name} ({len(file_content)} bytes)")
+        
         # Process with Vision API
+        logger.info(f"Processing {file_name} with Vision API")
         extracted_text, vision_error = process_with_vision_api(file_content, file_name)
         if vision_error:
+            logger.error(f"Vision API failed for {file_name}: {vision_error}")
             return jsonify({"error": f"Vision API failed: {vision_error}"}), 500
         
+        logger.info(f"Vision API extracted {len(extracted_text)} characters from {file_name}")
+        
         # Update Airtable with extracted text
+        logger.info(f"Updating Airtable record {record_id} with extracted text")
         success, message = update_airtable_field(record_id, "text", extracted_text)
         if not success:
+            logger.error(f"Airtable update failed for {record_id}: {message}")
             return jsonify({"error": f"Airtable update failed: {message}"}), 500
+        
+        logger.info(f"Successfully processed {file_name} and updated Airtable record {record_id}")
         
         return jsonify({
             "success": True,
@@ -323,32 +425,61 @@ def download_and_analyze_vision():
         })
         
     except Exception as e:
+        logger.error(f"Unexpected error in /download-and-analyze-vision: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/rename-file', methods=['POST'])
 def rename_file():
     """Rename file in Google Drive after AI analysis"""
     try:
+        # Validate webhook signature if configured
+        if WEBHOOK_SECRET:
+            signature = request.headers.get('X-Hub-Signature-256')
+            if not validate_webhook_signature(request.get_data(), signature):
+                logger.warning("Invalid webhook signature for /rename-file")
+                return jsonify({"error": "Invalid signature"}), 401
+        
         data = request.json
+        logger.info(f"File rename request: file_id={data.get('file_id')}, new_name={data.get('new_name')}")
+        
+        # Validate required fields
+        is_valid, error_msg = validate_request_data(data, ['file_id', 'new_name'])
+        if not is_valid:
+            logger.warning(f"Invalid rename request data: {error_msg}")
+            return jsonify({"error": error_msg}), 400
+        
         file_id = data.get('file_id')
         new_name = data.get('new_name')
         
-        if not file_id or not new_name:
-            return jsonify({"error": "file_id and new_name are required"}), 400
-        
+        logger.info(f"Renaming file {file_id} to '{new_name}'")
         success, message = rename_file_in_drive(file_id, new_name)
         
         if success:
+            logger.info(f"Successfully renamed file {file_id} to '{new_name}'")
             return jsonify({"success": True, "message": message})
         else:
+            logger.error(f"Failed to rename file {file_id}: {message}")
             return jsonify({"error": message}), 500
             
     except Exception as e:
+        logger.error(f"Unexpected error in /rename-file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy"})
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Drive-Airtable Vision Integration API',
+        'version': 'PRODUCTION-2025-07-03',
+        'timestamp': dt.utcnow().isoformat(),
+        'features': {
+            'vision_api': True,
+            'drive_integration': True,
+            'airtable_integration': True,
+            'webhook_security': bool(WEBHOOK_SECRET)
+        }
+    })
 
 @app.route('/temp-files', methods=['GET'])
 def list_temp_files():
@@ -390,27 +521,42 @@ def cleanup_temp_files():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
+    # Load environment variables
+    load_env()
+    
+    # Get port from environment or default
+    port = int(os.environ.get('PORT', 5001))
+    
     # Validate setup
     required_vars = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
-        print(f"Missing environment variables: {', '.join(missing_vars)}")
+        logger.error(f"Missing environment variables: {', '.join(missing_vars)}")
         exit(1)
     
     if not os.path.exists(GOOGLE_CREDENTIALS_PATH):
-        print(f"Google credentials file not found: {GOOGLE_CREDENTIALS_PATH}")
+        logger.error(f"Google credentials file not found: {GOOGLE_CREDENTIALS_PATH}")
         exit(1)
     
     # Clean up old temp files on startup
     cleanup_old_temp_files()
     
-    print("🚀 Flask server starting...")
-    print(f"📊 Health check: http://localhost:5001/health")
-    print(f"👁️  Vision API endpoint: POST http://localhost:5001/download-and-analyze-vision")
-    print(f"⬇️  Download endpoint: POST http://localhost:5001/download-and-analyze")
-    print(f"✏️  Rename endpoint: POST http://localhost:5001/rename-file")
-    print(f"📁 Temp files: {TEMP_FILES_DIR} (debug: {'enabled' if DEBUG_SAVE_FILES else 'disabled'})")
-    print(f"🗂️  Temp files info: GET http://localhost:5001/temp-files")
+    # Log startup information
+    logger.info(f"Starting PRODUCTION Drive-Airtable Vision Integration Server")
+    logger.info(f"Version: 2025-07-03 (Security improvements added)")
+    logger.info(f"Port: {port}")
+    logger.info(f"Debug mode: {'enabled' if DEBUG_SAVE_FILES else 'disabled'}")
+    logger.info(f"Webhook security: {'enabled' if WEBHOOK_SECRET else 'disabled'}")
+    logger.info(f"Temp files directory: {TEMP_FILES_DIR}")
     
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    print("🚀 PRODUCTION Flask server starting...")
+    print(f"📊 Health check: http://localhost:{port}/health")
+    print(f"👁️  Vision API endpoint: POST http://localhost:{port}/download-and-analyze-vision")
+    print(f"⬇️  Download endpoint: POST http://localhost:{port}/download-and-analyze")
+    print(f"✏️  Rename endpoint: POST http://localhost:{port}/rename-file")
+    print(f"🔐 Security: {'Webhook validation enabled' if WEBHOOK_SECRET else 'No webhook validation'}")
+    print(f"📁 Temp files: {TEMP_FILES_DIR} (debug: {'enabled' if DEBUG_SAVE_FILES else 'disabled'})")
+    
+    # Run the server in production mode
+    app.run(debug=False, host='0.0.0.0', port=port)
