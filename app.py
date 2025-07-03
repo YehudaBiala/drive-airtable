@@ -175,85 +175,42 @@ def rename_file_in_drive(file_id, new_name):
         return False, str(e)
 
 def process_with_vision_api(file_content, file_name):
-    """Process file content with Google Cloud Vision API"""
+    """Process file content with Google Cloud Vision API and return extracted text"""
     try:
         client = get_vision_client()
         image = vision.Image(content=file_content)
         
-        # Perform multiple types of detection
-        results = {
-            "file_name": file_name,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "analysis": {}
-        }
+        extracted_text = ""
         
-        # Text detection (OCR)
-        response = client.text_detection(image=image)
-        texts = response.text_annotations
-        if texts:
-            results["analysis"]["full_text"] = texts[0].description
-            results["analysis"]["text_blocks"] = [
-                {
-                    "text": text.description,
-                    "confidence": getattr(text, 'confidence', None)
-                } for text in texts[1:11]  # First 10 text blocks
-            ]
-        
-        # Label detection (what's in the image)
-        response = client.label_detection(image=image)
-        labels = response.label_annotations
-        if labels:
-            results["analysis"]["labels"] = [
-                {
-                    "description": label.description,
-                    "score": label.score,
-                    "topicality": label.topicality
-                } for label in labels
-            ]
-        
-        # Document text detection (better for documents)
+        # Try document text detection first (better for documents)
         response = client.document_text_detection(image=image)
-        if response.full_text_annotation:
-            results["analysis"]["document_text"] = response.full_text_annotation.text
+        if response.full_text_annotation and response.full_text_annotation.text.strip():
+            extracted_text = response.full_text_annotation.text.strip()
+        else:
+            # Fall back to regular text detection (OCR)
+            response = client.text_detection(image=image)
+            texts = response.text_annotations
+            if texts and texts[0].description.strip():
+                extracted_text = texts[0].description.strip()
         
-        # Object detection
-        response = client.object_localization(image=image)
-        objects = response.localized_object_annotations
-        if objects:
-            results["analysis"]["objects"] = [
-                {
-                    "name": obj.name,
-                    "score": obj.score
-                } for obj in objects
-            ]
+        # If no text found, try object detection to describe what's in the image
+        if not extracted_text:
+            response = client.object_localization(image=image)
+            objects = response.localized_object_annotations
+            if objects:
+                object_names = [obj.name for obj in objects[:5]]  # Top 5 objects
+                extracted_text = f"Objects detected: {', '.join(object_names)}"
+            else:
+                # Last resort: use label detection
+                response = client.label_detection(image=image)
+                labels = response.label_annotations
+                if labels:
+                    label_names = [label.description for label in labels[:5]]  # Top 5 labels
+                    extracted_text = f"Image contains: {', '.join(label_names)}"
+                else:
+                    extracted_text = f"No text or recognizable content found in {file_name}"
         
-        # Safe search detection
-        response = client.safe_search_detection(image=image)
-        safe = response.safe_search_annotation
-        results["analysis"]["safe_search"] = {
-            "adult": safe.adult.name,
-            "violence": safe.violence.name,
-            "racy": safe.racy.name
-        }
-        
-        # Image properties (dominant colors)
-        response = client.image_properties(image=image)
-        props = response.image_properties_annotation
-        if props.dominant_colors:
-            colors = props.dominant_colors.colors[:5]  # Top 5 colors
-            results["analysis"]["dominant_colors"] = [
-                {
-                    "rgb": {
-                        "red": int(color.color.red),
-                        "green": int(color.color.green),
-                        "blue": int(color.color.blue)
-                    },
-                    "score": color.score,
-                    "pixel_fraction": color.pixel_fraction
-                } for color in colors
-            ]
-        
-        return json.dumps(results, indent=2), None
+        return extracted_text, None
         
     except Exception as e:
         return None, f"Vision API error: {str(e)}"
@@ -347,28 +304,22 @@ def download_and_analyze_vision():
             return jsonify({"error": f"Download failed: {error}"}), 500
         
         # Process with Vision API
-        vision_results, vision_error = process_with_vision_api(file_content, file_name)
+        extracted_text, vision_error = process_with_vision_api(file_content, file_name)
         if vision_error:
             return jsonify({"error": f"Vision API failed: {vision_error}"}), 500
         
-        # Update Airtable with Vision API results
-        success, message = update_airtable_field(record_id, "text", vision_results)
+        # Update Airtable with extracted text
+        success, message = update_airtable_field(record_id, "text", extracted_text)
         if not success:
             return jsonify({"error": f"Airtable update failed: {message}"}), 500
-        
-        # Parse results for response
-        results_data = json.loads(vision_results)
         
         return jsonify({
             "success": True,
             "message": "File processed with Vision API",
             "file_name": file_name,
             "file_id": file_id,
-            "vision_summary": {
-                "has_text": bool(results_data["analysis"].get("full_text")),
-                "label_count": len(results_data["analysis"].get("labels", [])),
-                "object_count": len(results_data["analysis"].get("objects", []))
-            }
+            "extracted_text_length": len(extracted_text),
+            "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text
         })
         
     except Exception as e:
