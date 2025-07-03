@@ -1,0 +1,10 @@
+filename,path,status,instance_id,last_modified,description
+google_credentials.json,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Google Cloud service account credentials
+CLAUDE.md,/mnt/c/Users/lionh/drive-airtable/,updated,init-session,2025-07-02,Claude Code guidance file with complete project specs
+PROJECT_STATUS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,init-session,2025-07-02,Project status tracking
+files.csv,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,init-session,2025-07-02,File tracking for instance coordination
+claude_code_handoff.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,to-delete,init-session,2025-07-02,Original handoff document (integrated)
+app.py,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Main Flask application
+requirements.txt,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Python dependencies
+.gitignore,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Git ignore rules
+.env.example,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Environment variables template
