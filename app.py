@@ -64,6 +64,7 @@ AIRTABLE_TABLE_NAME = os.getenv('AIRTABLE_TABLE_NAME', 'Files')
 TEMP_FILES_DIR = os.getenv('TEMP_FILES_DIR', './temp_files')
 DEBUG_SAVE_FILES = os.getenv('DEBUG_SAVE_FILES', 'false').lower() == 'true'
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')  # Optional webhook validation
+FLASK_SERVER_TOKEN = os.getenv('FLASK_SERVER_TOKEN')  # Bearer token for API authentication
 
 # Ensure temp directory exists
 os.makedirs(TEMP_FILES_DIR, exist_ok=True)
@@ -103,6 +104,30 @@ def validate_webhook_signature(request_data, signature_header):
         logger.warning("Invalid webhook signature")
     
     return is_valid
+
+def validate_bearer_token(auth_header):
+    """Validate Bearer token if FLASK_SERVER_TOKEN is set"""
+    if not FLASK_SERVER_TOKEN:
+        return True  # Skip validation if no token is configured
+    
+    if not auth_header:
+        logger.warning("Authorization header missing")
+        return False
+    
+    # Extract token from "Bearer <token>" format
+    try:
+        auth_type, token = auth_header.split(' ', 1)
+        if auth_type.lower() != 'bearer':
+            logger.warning(f"Invalid auth type: {auth_type}")
+            return False
+        
+        is_valid = hmac.compare_digest(token, FLASK_SERVER_TOKEN)
+        if not is_valid:
+            logger.warning("Invalid bearer token")
+        return is_valid
+    except Exception as e:
+        logger.warning(f"Bearer token validation error: {e}")
+        return False
 
 def get_drive_service():
     credentials = service_account.Credentials.from_service_account_file(
@@ -355,6 +380,12 @@ def download_and_analyze():
 def download_and_analyze_vision():
     """Download file from Drive, process with Vision API, and update Airtable"""
     try:
+        # Validate Bearer token
+        auth_header = request.headers.get('Authorization')
+        if not validate_bearer_token(auth_header):
+            logger.warning("Invalid bearer token for /download-and-analyze-vision")
+            return jsonify({"error": "Unauthorized"}), 401
+        
         # Validate webhook signature if configured
         if WEBHOOK_SECRET:
             signature = request.headers.get('X-Hub-Signature-256')
@@ -432,6 +463,12 @@ def download_and_analyze_vision():
 def rename_file():
     """Rename file in Google Drive after AI analysis"""
     try:
+        # Validate Bearer token
+        auth_header = request.headers.get('Authorization')
+        if not validate_bearer_token(auth_header):
+            logger.warning("Invalid bearer token for /rename-file")
+            return jsonify({"error": "Unauthorized"}), 401
+        
         # Validate webhook signature if configured
         if WEBHOOK_SECRET:
             signature = request.headers.get('X-Hub-Signature-256')
@@ -477,7 +514,8 @@ def health_check():
             'vision_api': True,
             'drive_integration': True,
             'airtable_integration': True,
-            'webhook_security': bool(WEBHOOK_SECRET)
+            'bearer_token_auth': bool(FLASK_SERVER_TOKEN),
+            'webhook_signature': bool(WEBHOOK_SECRET)
         }
     })
 
@@ -547,7 +585,8 @@ if __name__ == '__main__':
     logger.info(f"Version: 2025-07-03 (Security improvements added)")
     logger.info(f"Port: {port}")
     logger.info(f"Debug mode: {'enabled' if DEBUG_SAVE_FILES else 'disabled'}")
-    logger.info(f"Webhook security: {'enabled' if WEBHOOK_SECRET else 'disabled'}")
+    logger.info(f"Bearer token auth: {'enabled' if FLASK_SERVER_TOKEN else 'disabled'}")
+    logger.info(f"Webhook signature: {'enabled' if WEBHOOK_SECRET else 'disabled'}")
     logger.info(f"Temp files directory: {TEMP_FILES_DIR}")
     
     print("🚀 PRODUCTION Flask server starting...")
@@ -555,7 +594,7 @@ if __name__ == '__main__':
     print(f"👁️  Vision API endpoint: POST http://localhost:{port}/download-and-analyze-vision")
     print(f"⬇️  Download endpoint: POST http://localhost:{port}/download-and-analyze")
     print(f"✏️  Rename endpoint: POST http://localhost:{port}/rename-file")
-    print(f"🔐 Security: {'Webhook validation enabled' if WEBHOOK_SECRET else 'No webhook validation'}")
+    print(f"🔐 Security: {'Bearer token required' if FLASK_SERVER_TOKEN else 'No auth'} | {'Webhook signatures' if WEBHOOK_SECRET else 'No signatures'}")
     print(f"📁 Temp files: {TEMP_FILES_DIR} (debug: {'enabled' if DEBUG_SAVE_FILES else 'disabled'})")
     
     # Run the server in production mode

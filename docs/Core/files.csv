@@ -8,3 +8,4 @@ app.py,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Main F
 requirements.txt,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Python dependencies
 .gitignore,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Git ignore rules
 .env.example,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Environment variables template
+airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-03,Vision processing automation - added security token

@@ -11,6 +11,7 @@
 
 // Configuration
 const WEBHOOK_URL = 'http://159.203.191.40:5001/download-and-analyze-vision';
+const FLASK_SERVER_TOKEN = input.secret; // Security token for Flask server
 
 // Get the record that triggered the automation
 let inputConfig = input.config();
@@ -51,6 +52,7 @@ try {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${FLASK_SERVER_TOKEN}`
         },
         body: JSON.stringify(webhookData)
     });
