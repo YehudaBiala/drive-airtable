@@ -439,7 +439,7 @@ def download_and_analyze_vision():
         
         # Update Airtable with extracted text
         logger.info(f"Updating Airtable record {record_id} with extracted text")
-        success, message = update_airtable_field(record_id, "text", extracted_text)
+        success, message = update_airtable_field(record_id, "Text", extracted_text)
         if not success:
             logger.error(f"Airtable update failed for {record_id}: {message}")
             return jsonify({"error": f"Airtable update failed: {message}"}), 500
