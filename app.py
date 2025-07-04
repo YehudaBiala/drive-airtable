@@ -530,20 +530,15 @@ def download_and_analyze_vision():
         
         logger.info(f"Vision API extracted {len(extracted_text)} characters from {file_name}")
         
-        # Update Airtable with extracted text
-        logger.info(f"Updating Airtable record {record_id} with extracted text")
-        success, message = update_airtable_field(record_id, "Text", extracted_text)
-        if not success:
-            logger.error(f"Airtable update failed for {record_id}: {message}")
-            return jsonify({"error": f"Airtable update failed: {message}"}), 500
-        
-        logger.info(f"Successfully processed {file_name} and updated Airtable record {record_id}")
+        # Return extracted text to automation instead of updating Airtable directly
+        logger.info(f"Successfully processed {file_name}, returning extracted text to automation")
         
         return jsonify({
             "success": True,
             "message": "File processed with Vision API",
             "file_name": file_name,
             "file_id": file_id,
+            "extracted_text": extracted_text,
             "extracted_text_length": len(extracted_text),
             "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text
         })

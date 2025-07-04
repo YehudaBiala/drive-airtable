@@ -58,19 +58,30 @@ try {
         let result = await response.json();
         console.log('Vision processing webhook sent successfully:', result);
         
-        // Update processing status (optional)
-        // await table.updateRecordAsync(recordId, {
-        //     'Processing Status': 'Vision API processing complete'
-        // });
+        if (result.success && result.extracted_text) {
+            console.log('Extracted text length:', result.extracted_text_length);
+            console.log('Text preview:', result.text_preview);
+            
+            // Use output.set() to return the extracted text to the automation
+            output.set('extracted_text', result.extracted_text);
+            output.set('file_name', result.file_name);
+            output.set('text_length', result.extracted_text_length);
+            output.set('processing_status', 'Vision API processing complete');
+            
+            console.log('Text extraction completed successfully - use outputs in next automation step');
+        } else {
+            console.error('Unexpected response format:', result);
+            output.set('error', 'Invalid response from Vision API');
+            output.set('processing_status', 'Error: Invalid response format');
+        }
         
     } else {
         let errorText = await response.text();
         console.error('Vision webhook failed:', response.status, errorText);
         
-        // Update error status (optional)
-        // await table.updateRecordAsync(recordId, {
-        //     'Processing Status': `Vision API Error: ${response.status} - ${errorText}`
-        // });
+        // Set error outputs
+        output.set('error', `Vision API Error: ${response.status} - ${errorText}`);
+        output.set('processing_status', `Vision API Error: ${response.status}`);
     }
 } catch (error) {
     console.error('Vision webhook request failed:', error);
@@ -90,8 +101,7 @@ try {
         console.error('3. Server is accessible from Airtable');
     }
     
-    // Update error status (optional)
-    // await table.updateRecordAsync(recordId, {
-    //     'Processing Status': `Connection error: ${error.message}`
-    // });
+    // Set error outputs
+    output.set('error', `Connection error: ${error.message}`);
+    output.set('processing_status', 'Connection error');
 }
