@@ -274,8 +274,8 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
-def format_hebrew_text_with_rtl(text):
-    """Add RTL formatting for Hebrew text instead of reversing characters"""
+def fix_reversed_hebrew_text(text):
+    """Reverse Hebrew text that comes out backwards from OCR"""
     import re
     
     # Check if text contains Hebrew characters
@@ -290,42 +290,28 @@ def format_hebrew_text_with_rtl(text):
     
     logger.info(f"Detected Hebrew text - ratio: {hebrew_ratio:.2f} ({hebrew_chars}/{total_chars})")
     
-    # If text is mostly Hebrew (>20%), add RTL formatting
+    # If text is mostly Hebrew (>20%), check if it needs reversal
     if hebrew_ratio > 0.2:
-        logger.info("Adding RTL document formatting for Hebrew text")
+        # Check for patterns that indicate the text is reversed
+        reversed_indicators = [
+            'לקפוטמרהקסמהןע', 'הקרומ', 'קסוע', 'ןוקלמ', 'תאראך', 'לסבור', 
+            'וקסהלבק', 'ךגהג', 'ךוסרר', 'גסוך', 'ךרקךמ', 'ךש', 'םרפמ', 
+            'ךל', 'סמני', 'רפסמ', 'ךמס', 'מרוו'
+        ]
         
-        # Add RTL document header and formatting
-        rtl_formatted_text = f"""<!DOCTYPE html>
-<html dir="rtl" lang="he">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {{
-            direction: rtl;
-            text-align: right;
-            font-family: 'Arial', 'David', 'Times New Roman', serif;
-            unicode-bidi: bidi-override;
-        }}
-        .hebrew {{
-            direction: rtl;
-            unicode-bidi: embed;
-        }}
-    </style>
-</head>
-<body class="hebrew">
-<pre>{text}</pre>
-</body>
-</html>
-
---- PLAIN TEXT VERSION ---
-{text}
-
---- REVERSED VERSION (if needed) ---
-{text[::-1] if any(pattern in text for pattern in ['ךמס', 'הקרומ', 'קסוע', 'ןוקלמ']) else 'Text appears to be in correct direction'}
-"""
+        # Count how many reversed patterns we find
+        reversed_count = sum(1 for pattern in reversed_indicators if pattern in text)
         
-        logger.info("Hebrew text formatted with RTL document structure")
-        return rtl_formatted_text
+        if reversed_count >= 2:  # If we find evidence of reversed text
+            logger.info(f"Found {reversed_count} reversed patterns - reversing entire text to fix direction")
+            
+            # Simply reverse the entire text to fix the direction
+            fixed_text = text[::-1]
+            
+            logger.info(f"Text reversed: '{text[:50]}...' -> '{fixed_text[:50]}...'")
+            return fixed_text
+        else:
+            logger.info(f"Only found {reversed_count} reversed patterns - text may be correct")
     
     return text
 
@@ -343,9 +329,9 @@ def extract_text_from_pdf(file_content):
         
         extracted_text = text.strip() if text.strip() else None
         
-        # Format Hebrew text with RTL if needed
+        # Fix reversed Hebrew text if needed
         if extracted_text:
-            extracted_text = format_hebrew_text_with_rtl(extracted_text)
+            extracted_text = fix_reversed_hebrew_text(extracted_text)
         
         return extracted_text
     except Exception as e:
