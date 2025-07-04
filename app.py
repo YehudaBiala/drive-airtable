@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime as dt
+import PyPDF2
 
 # Add local lib directory to Python path for installed packages
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
@@ -271,24 +272,61 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
+def extract_text_from_pdf(file_content):
+    """Extract text from PDF using PyPDF2"""
+    try:
+        pdf_file = io.BytesIO(file_content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        
+        text = ""
+        for page_num, page in enumerate(pdf_reader.pages):
+            page_text = page.extract_text()
+            if page_text.strip():
+                text += page_text + "\n"
+        
+        return text.strip() if text.strip() else None
+    except Exception as e:
+        logger.error(f"PDF text extraction failed: {str(e)}")
+        return None
+
 def process_with_vision_api(file_content, file_name):
     """Process file content with Google Cloud Vision API and return extracted text"""
     try:
+        extracted_text = ""
+        
+        # Check if it's a PDF file
+        if file_name.lower().endswith('.pdf'):
+            logger.info(f"Processing PDF file: {file_name}")
+            
+            # First try to extract text directly from PDF (for text-based PDFs)
+            pdf_text = extract_text_from_pdf(file_content)
+            if pdf_text:
+                logger.info(f"Successfully extracted {len(pdf_text)} characters from PDF text layer")
+                return pdf_text, None
+            else:
+                logger.info("PDF has no extractable text layer, treating as image-based PDF")
+                # Fall through to Vision API processing for image-based PDFs
+        
+        # Process with Vision API (for images or image-based PDFs)
         client = get_vision_client()
         image = vision.Image(content=file_content)
         
-        extracted_text = ""
-        
         # Try document text detection first (better for documents)
+        logger.info(f"Trying document text detection for {file_name}")
         response = client.document_text_detection(image=image)
         if response.full_text_annotation and response.full_text_annotation.text.strip():
             extracted_text = response.full_text_annotation.text.strip()
+            logger.info(f"Document text detection found {len(extracted_text)} characters")
         else:
+            logger.info("Document text detection found no text, trying regular OCR")
             # Fall back to regular text detection (OCR)
             response = client.text_detection(image=image)
             texts = response.text_annotations
             if texts and texts[0].description.strip():
                 extracted_text = texts[0].description.strip()
+                logger.info(f"OCR found {len(extracted_text)} characters")
+            else:
+                logger.info("OCR found no text, trying object detection")
         
         # If no text found, try object detection to describe what's in the image
         if not extracted_text:
@@ -297,19 +335,25 @@ def process_with_vision_api(file_content, file_name):
             if objects:
                 object_names = [obj.name for obj in objects[:5]]  # Top 5 objects
                 extracted_text = f"Objects detected: {', '.join(object_names)}"
+                logger.info(f"Object detection found: {object_names}")
             else:
+                logger.info("Object detection found nothing, trying label detection")
                 # Last resort: use label detection
                 response = client.label_detection(image=image)
                 labels = response.label_annotations
                 if labels:
                     label_names = [label.description for label in labels[:5]]  # Top 5 labels
                     extracted_text = f"Image contains: {', '.join(label_names)}"
+                    logger.info(f"Label detection found: {label_names}")
                 else:
                     extracted_text = f"No text or recognizable content found in {file_name}"
+                    logger.warning(f"All Vision API methods failed to extract content from {file_name}")
         
+        logger.info(f"Final extracted text preview: '{extracted_text[:100]}...'")
         return extracted_text, None
         
     except Exception as e:
+        logger.error(f"Vision API processing error for {file_name}: {str(e)}")
         return None, f"Vision API error: {str(e)}"
 
 def update_airtable_field(record_id, field_name, field_value):
