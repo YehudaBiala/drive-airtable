@@ -69,14 +69,16 @@ try {
             console.log('Extracted text length:', result.extracted_text_length);
             console.log('Text preview:', result.text_preview);
             
-            // Use output.set() to return the extracted text and file to the automation
+            // Use output.set() to return the file content and extracted text to the automation
+            // The AI will process the actual file content directly
             output.set('extracted_text', result.extracted_text);
             output.set('file_name', result.file_name);
             output.set('file_id', result.file_id);
             output.set('text_length', result.extracted_text_length);
             output.set('file_content_base64', result.file_content_base64);
             output.set('file_size', result.file_size);
-            output.set('processing_status', 'Vision API processing complete');
+            output.set('mime_type', result.mime_type);
+            output.set('processing_status', 'Vision API processing complete - file ready for AI analysis');
             
             console.log('Text extraction completed successfully - use outputs in next automation step');
         } else {
