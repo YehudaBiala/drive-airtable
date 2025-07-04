@@ -10,20 +10,17 @@
 // 5. Second automation sends suggested filename back to Flask to rename file
 
 // Configuration
-const WEBHOOK_URL = 'http://159.203.191.40:5001/download-and-analyze-vision';
-const FLASK_SERVER_TOKEN = input.secret; // Security token for Flask server
+const WEBHOOK_URL = 'https://api.officeours.co.il/download-and-analyze-vision';
+const FLASK_SERVER_TOKEN = input.secret("receipt_server_token"); // Security token for Flask server
 
 // Get the record that triggered the automation
 let inputConfig = input.config();
-let record = inputConfig.record;
-
-// Extract required data from the record
-let recordId = record.id;
-let googleDriveUrl = record.getCellValue('Google Drive URL'); // Adjust field name as needed
-let googleDriveFileId = record.getCellValue('Google Drive File ID'); // If you have this field
+let recordId = inputConfig.record_id;
+let googleDriveFileId = inputConfig.file_id;
+let googleDriveUrl = inputConfig.drive_url;
 
 // Check if already processed (avoid re-processing)
-let visionResults = record.getCellValue('Vision API Results'); // Field where Vision results go
+let visionResults = inputConfig.text; // Field where Vision results go
 if (visionResults && visionResults.length > 0) {
     console.log(`Record ${recordId} already has Vision results, skipping...`);
     return;
@@ -77,6 +74,21 @@ try {
     }
 } catch (error) {
     console.error('Vision webhook request failed:', error);
+    console.error('Error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+        url: WEBHOOK_URL
+    });
+    
+    // Common connection issues
+    if (error.name === 'FetchError' || error.name === 'a') {
+        console.error('Connection error - Flask server may be offline or port may be blocked');
+        console.error('Please check:');
+        console.error('1. Flask server is running on', WEBHOOK_URL);
+        console.error('2. Port 5001 is open in firewall');
+        console.error('3. Server is accessible from Airtable');
+    }
     
     // Update error status (optional)
     // await table.updateRecordAsync(recordId, {
