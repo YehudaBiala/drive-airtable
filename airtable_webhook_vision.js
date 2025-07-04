@@ -10,7 +10,6 @@
 // 5. Second automation sends suggested filename back to Flask to rename file
 
 // Configuration
-const WEBHOOK_URL = 'https://api.officeours.co.il/download-and-analyze-vision';
 const FLASK_SERVER_TOKEN = input.secret("receipt_server_token"); // Security token for Flask server
 
 // Get the record that triggered the automation
@@ -18,6 +17,11 @@ let inputConfig = input.config();
 let recordId = inputConfig.record_id;
 let googleDriveFileId = inputConfig.file_id;
 let googleDriveUrl = inputConfig.drive_url;
+let logId = inputConfig.log_id;
+let textId = inputConfig.text_id;
+let fileId = inputConfig.file_id;
+const WEBHOOK_URL = inputConfig.webhook_url;
+console.log(googleDriveFileId)
 
 // Check if already processed (avoid re-processing)
 let visionResults = inputConfig.text; // Field where Vision results go
@@ -33,7 +37,10 @@ console.log(`Google Drive URL: ${googleDriveUrl}`);
 // Prepare webhook payload
 let webhookData = {
     record_id: recordId,
-    drive_url: googleDriveUrl
+    drive_url: googleDriveUrl,
+    log_id: logId,
+    text_id: textId,
+    file_id: fileId
 };
 
 // Add file_id if available (optional - URL will work too)
@@ -62,10 +69,13 @@ try {
             console.log('Extracted text length:', result.extracted_text_length);
             console.log('Text preview:', result.text_preview);
             
-            // Use output.set() to return the extracted text to the automation
+            // Use output.set() to return the extracted text and file to the automation
             output.set('extracted_text', result.extracted_text);
             output.set('file_name', result.file_name);
+            output.set('file_id', result.file_id);
             output.set('text_length', result.extracted_text_length);
+            output.set('file_content_base64', result.file_content_base64);
+            output.set('file_size', result.file_size);
             output.set('processing_status', 'Vision API processing complete');
             
             console.log('Text extraction completed successfully - use outputs in next automation step');

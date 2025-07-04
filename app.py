@@ -530,8 +530,11 @@ def download_and_analyze_vision():
         
         logger.info(f"Vision API extracted {len(extracted_text)} characters from {file_name}")
         
-        # Return extracted text to automation instead of updating Airtable directly
-        logger.info(f"Successfully processed {file_name}, returning extracted text to automation")
+        # Convert file content to base64 for Airtable
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        
+        # Return extracted text and file to automation
+        logger.info(f"Successfully processed {file_name}, returning extracted text and file to automation")
         
         return jsonify({
             "success": True,
@@ -540,7 +543,9 @@ def download_and_analyze_vision():
             "file_id": file_id,
             "extracted_text": extracted_text,
             "extracted_text_length": len(extracted_text),
-            "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text
+            "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text,
+            "file_content_base64": file_base64,
+            "file_size": len(file_content)
         })
         
     except Exception as e:
