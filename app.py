@@ -22,10 +22,12 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime as dt
-import PyPDF2
 
 # Add local lib directory to Python path for installed packages
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
+
+# Import PyPDF2 after adding lib to path
+import PyPDF2
 
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
