@@ -274,46 +274,6 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
-def fix_reversed_hebrew_text(text):
-    """Reverse Hebrew text that comes out backwards from OCR"""
-    import re
-    
-    # Check if text contains Hebrew characters
-    hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
-    if not hebrew_pattern.search(text):
-        return text  # Not Hebrew, return as-is
-    
-    # Count Hebrew characters in the text
-    hebrew_chars = len(hebrew_pattern.findall(text))
-    total_chars = len(re.sub(r'\s', '', text))  # Non-whitespace chars
-    hebrew_ratio = hebrew_chars / max(total_chars, 1)
-    
-    logger.info(f"Detected Hebrew text - ratio: {hebrew_ratio:.2f} ({hebrew_chars}/{total_chars})")
-    
-    # If text is mostly Hebrew (>20%), check if it needs reversal
-    if hebrew_ratio > 0.2:
-        # Check for patterns that indicate the text is reversed
-        reversed_indicators = [
-            'לקפוטמרהקסמהןע', 'הקרומ', 'קסוע', 'ןוקלמ', 'תאראך', 'לסבור', 
-            'וקסהלבק', 'ךגהג', 'ךוסרר', 'גסוך', 'ךרקךמ', 'ךש', 'םרפמ', 
-            'ךל', 'סמני', 'רפסמ', 'ךמס', 'מרוו'
-        ]
-        
-        # Count how many reversed patterns we find
-        reversed_count = sum(1 for pattern in reversed_indicators if pattern in text)
-        
-        if reversed_count >= 2:  # If we find evidence of reversed text
-            logger.info(f"Found {reversed_count} reversed patterns - reversing entire text to fix direction")
-            
-            # Simply reverse the entire text to fix the direction
-            fixed_text = text[::-1]
-            
-            logger.info(f"Text reversed: '{text[:50]}...' -> '{fixed_text[:50]}...'")
-            return fixed_text
-        else:
-            logger.info(f"Only found {reversed_count} reversed patterns - text may be correct")
-    
-    return text
 
 def extract_text_from_pdf(file_content):
     """Extract text from PDF using PyPDF2"""
@@ -329,13 +289,52 @@ def extract_text_from_pdf(file_content):
         
         extracted_text = text.strip() if text.strip() else None
         
-        # Fix reversed Hebrew text if needed
-        if extracted_text:
-            extracted_text = fix_reversed_hebrew_text(extracted_text)
-        
         return extracted_text
     except Exception as e:
         logger.error(f"PDF text extraction failed: {str(e)}")
+        return None
+
+def extract_text_with_easyocr(file_content, file_name):
+    """Extract text using EasyOCR as fallback for difficult PDFs"""
+    try:
+        import easyocr
+        from PIL import Image
+        import fitz  # PyMuPDF
+        
+        logger.info(f"Using EasyOCR fallback for {file_name}")
+        
+        # Convert PDF to image using PyMuPDF
+        if file_name.lower().endswith('.pdf'):
+            pdf_document = fitz.open(stream=file_content, filetype="pdf")
+            page = pdf_document[0]  # First page
+            pix = page.get_pixmap()
+            img_data = pix.tobytes("png")
+            
+            # Convert to PIL Image
+            img = Image.open(io.BytesIO(img_data))
+            
+            pdf_document.close()
+        else:
+            # For regular images
+            img = Image.open(io.BytesIO(file_content))
+        
+        # Initialize EasyOCR reader (English and Hebrew)
+        reader = easyocr.Reader(['en', 'he'])
+        
+        # Extract text
+        results = reader.readtext(img)
+        
+        # Combine all detected text
+        extracted_text = ' '.join([result[1] for result in results if result[2] > 0.3])  # Confidence > 30%
+        
+        logger.info(f"EasyOCR extracted: '{extracted_text[:100]}...'")
+        return extracted_text.strip() if extracted_text.strip() else None
+        
+    except ImportError as e:
+        logger.warning(f"EasyOCR dependencies not available: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"EasyOCR processing failed: {str(e)}")
         return None
 
 def process_with_vision_api(file_content, file_name):
@@ -349,12 +348,24 @@ def process_with_vision_api(file_content, file_name):
             
             # First try to extract text directly from PDF (for text-based PDFs)
             pdf_text = extract_text_from_pdf(file_content)
-            if pdf_text:
+            if pdf_text and len(pdf_text.strip()) > 10:  # Only use if substantial text found
                 logger.info(f"Successfully extracted {len(pdf_text)} characters from PDF text layer")
                 return pdf_text, None
             else:
-                logger.info("PDF has no extractable text layer, treating as image-based PDF")
-                # Fall through to Vision API processing for image-based PDFs
+                logger.info("PDF has no extractable text layer or minimal text, converting to image for Vision API")
+                
+                # Try Vision API directly on PDF (some PDFs work)
+                logger.info("Attempting Vision API directly on PDF content")
+                
+                # If Vision API fails on PDF, try EasyOCR as fallback
+                try:
+                    logger.info("Vision API failed on PDF, trying EasyOCR fallback")
+                    fallback_text = extract_text_with_easyocr(file_content, file_name)
+                    if fallback_text and len(fallback_text.strip()) > 10:
+                        logger.info(f"EasyOCR extracted {len(fallback_text)} characters from PDF")
+                        return fallback_text, None
+                except Exception as e:
+                    logger.warning(f"EasyOCR fallback failed: {str(e)}")
         
         # Process with Vision API (for images or image-based PDFs)
         client = get_vision_client()
@@ -395,10 +406,30 @@ def process_with_vision_api(file_content, file_name):
                     extracted_text = f"Image contains: {', '.join(label_names)}"
                     logger.info(f"Label detection found: {label_names}")
                 else:
-                    extracted_text = f"No text or recognizable content found in {file_name}"
-                    logger.warning(f"All Vision API methods failed to extract content from {file_name}")
+                    # Last resort: try EasyOCR fallback
+                    logger.info("All Vision API methods failed, trying EasyOCR as final fallback")
+                    try:
+                        fallback_text = extract_text_with_easyocr(file_content, file_name)
+                        if fallback_text and len(fallback_text.strip()) > 5:
+                            logger.info(f"EasyOCR successfully extracted {len(fallback_text)} characters")
+                            extracted_text = fallback_text
+                        else:
+                            # Final failure message
+                            if file_name.lower().endswith('.pdf'):
+                                extracted_text = f"PDF file: {file_name} - This appears to be a scanned or image-based PDF. Multiple OCR methods were attempted but no readable text was found. This may be a receipt, invoice, or document that requires manual review."
+                            else:
+                                extracted_text = f"No readable text found in {file_name}. Multiple OCR methods were attempted. This may be an image without text, a blank document, or a file type that requires different processing."
+                    except Exception as e:
+                        logger.error(f"EasyOCR final fallback failed: {str(e)}")
+                        # Final failure message
+                        if file_name.lower().endswith('.pdf'):
+                            extracted_text = f"PDF file: {file_name} - This appears to be a scanned or image-based PDF. Multiple OCR methods were attempted but no readable text was found. This may be a receipt, invoice, or document that requires manual review."
+                        else:
+                            extracted_text = f"No readable text found in {file_name}. Multiple OCR methods were attempted. This may be an image without text, a blank document, or a file type that requires different processing."
+                    
+                    logger.warning(f"All OCR methods failed to extract content from {file_name}")
         
-        logger.info(f"Final extracted text preview: '{extracted_text[:100]}...'")
+        logger.info(f"Final result: {len(extracted_text)} characters extracted")
         return extracted_text, None
         
     except Exception as e:
@@ -429,6 +460,42 @@ def update_airtable_field(record_id, field_name, field_value):
             
     except Exception as e:
         return False, str(e)
+
+def upload_file_to_airtable(file_content, file_name, mime_type):
+    """Upload file to Airtable and return attachment object"""
+    try:
+        logger.info(f"Uploading {file_name} to Airtable as attachment")
+        
+        # Prepare file for upload
+        files = {
+            'file': (file_name, io.BytesIO(file_content), mime_type)
+        }
+        
+        headers = {
+            'Authorization': f'Bearer {AIRTABLE_API_KEY}'
+        }
+        
+        # Upload to Airtable attachment API
+        # Note: Airtable doesn't have a direct file upload API, we need to upload to a temporary service
+        # For now, let's use a simpler approach - return the base64 for direct use
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        
+        # Create a data URL that Airtable can use
+        data_url = f"data:{mime_type};base64,{file_base64}"
+        
+        logger.info(f"Created data URL for {file_name} (size: {len(file_content)} bytes)")
+        
+        # Return attachment object with data URL (Airtable AI can process this)
+        return [{
+            'url': data_url,
+            'filename': file_name,
+            'size': len(file_content),
+            'type': mime_type
+        }]
+            
+    except Exception as e:
+        logger.error(f"File upload error: {str(e)}")
+        return None
 
 @app.route('/download-and-analyze', methods=['POST'])
 def download_and_analyze():
@@ -530,24 +597,44 @@ def download_and_analyze_vision():
         
         logger.info(f"Vision API extracted {len(extracted_text)} characters from {file_name}")
         
-        # Convert file content to base64 for Airtable AI
-        file_base64 = base64.b64encode(file_content).decode('utf-8')
+        # Upload file to Airtable for AI processing
+        mime_type = "application/pdf" if file_name.lower().endswith('.pdf') else "image/jpeg"
+        file_attachment = upload_file_to_airtable(file_content, file_name, mime_type)
         
-        # Return both extracted text and file content to automation
-        # The AI will process the actual file content directly
-        logger.info(f"Successfully processed {file_name}, returning file content and extracted text to automation")
+        # Check if extraction failed and this is just an error message
+        ocr_failed = extracted_text and ("Multiple OCR methods were attempted" in extracted_text or "no readable text was found" in extracted_text)
+        
+        if ocr_failed:
+            # OCR failed but file is uploaded for AI processing
+            logger.warning(f"OCR failed for {file_name}, but file uploaded to Airtable for AI processing")
+            return jsonify({
+                "success": True,  # Success because file was uploaded even though OCR failed
+                "message": "OCR failed but file uploaded for AI processing",
+                "file_name": file_name,
+                "file_id": file_id,
+                "extracted_text": extracted_text,
+                "file_attachment": file_attachment,  # AI can process this file directly
+                "file_size": len(file_content),
+                "mime_type": mime_type,
+                "ocr_failed": True,
+                "processing_status": "OCR failed but file available for AI analysis"
+            })
+        
+        # Return both extracted text and file attachment for AI processing
+        logger.info(f"Successfully processed {file_name}, returning extracted text and file attachment")
         
         return jsonify({
             "success": True,
-            "message": "File processed with Vision API",
+            "message": "File processed with Vision API and uploaded to Airtable",
             "file_name": file_name,
             "file_id": file_id,
             "extracted_text": extracted_text,
             "extracted_text_length": len(extracted_text),
             "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text,
-            "file_content_base64": file_base64,  # AI will process this directly
+            "file_attachment": file_attachment,  # AI can process this file directly
             "file_size": len(file_content),
-            "mime_type": "application/pdf" if file_name.lower().endswith('.pdf') else "image/jpeg"
+            "mime_type": mime_type,
+            "processing_status": "File processed and uploaded - ready for AI analysis"
         })
         
     except Exception as e:

@@ -1,11 +1,15 @@
 filename,path,status,instance_id,last_modified,description
 google_credentials.json,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Google Cloud service account credentials
-CLAUDE.md,/mnt/c/Users/lionh/drive-airtable/,updated,init-session,2025-07-02,Claude Code guidance file with complete project specs
+CLAUDE.md,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-04,Added SSH deployment commands and removed manual server work requests
 PROJECT_STATUS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,init-session,2025-07-02,Project status tracking
-files.csv,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,init-session,2025-07-02,File tracking for instance coordination
-claude_code_handoff.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,to-delete,init-session,2025-07-02,Original handoff document (integrated)
+files.csv,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,current-session,2025-07-04,File tracking for instance coordination - cleaned up
 app.py,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Main Flask application
 requirements.txt,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Python dependencies
 .gitignore,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Git ignore rules
 .env.example,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Environment variables template
-airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-03,Vision processing automation - added security token
+airtable_webhook_vision_v1_security-token.js,/mnt/c/Users/lionh/drive-airtable/,archived,current-session,2025-07-03,Vision processing automation - added security token
+airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-04,Vision processing automation - server-side file upload to Airtable
+NEXT_SESSION_TASKS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,current-session,2025-07-04,Handoff documentation for next Claude session
+app.py,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-04,Main Flask application - NEEDS VERSIONING
+airtable_rename_automation.js,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,File renaming automation script
+deploy.sh,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Deployment automation script

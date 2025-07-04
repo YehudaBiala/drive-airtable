@@ -160,39 +160,54 @@ Flask renames original file in Google Drive
 
 ## Deployment to Cloudways
 
-### Quick Deploy
+### 🚨 CLAUDE MUST DO SSH DEPLOYMENTS DIRECTLY 🚨
+**DO NOT ASK USER TO DO SERVER WORK - USE SSH COMMANDS BELOW**
+
+### SSH Connection Details
 ```bash
-# Use the automated deployment script
-./deploy.sh YOUR_SERVER_IP YOUR_SSH_USER
+# SSH connection is already configured in ~/.ssh/config
+ssh myserver
+# This connects to: ehuda@phpstack-984109-5614954.cloudwaysapps.com
 ```
 
-### Manual Deploy via SSH/SFTP
-1. **Upload files**: Use SFTP or rsync to copy project files
-2. **Setup Python**: Create virtual environment and install dependencies
-3. **Configure**: Upload credentials and create .env file
-4. **Run**: Use gunicorn for production deployment
-
-### Cloudways-Specific Configuration
-- Default Python path: `/usr/bin/python3`
-- Application directory: `/home/master_xxxxx/drive-airtable`
-- Use systemd service or supervisor for process management
-- Configure Nginx proxy if needed (port 5000)
-
-### Deployment Commands
+### Direct SSH Deployment Commands
 ```bash
-# Initial setup on server
+# Upload files via SCP
+scp app.py myserver:~/drive-airtable/
+scp requirements.txt myserver:~/drive-airtable/
+scp google_credentials.json myserver:~/drive-airtable/
+
+# Connect and restart service
+ssh myserver << 'EOF'
 cd ~/drive-airtable
-python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-pip install gunicorn
+sudo systemctl restart drive-airtable
+sudo systemctl status drive-airtable
+EOF
+```
 
-# Run production server
-gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+### Cloudways-Specific Configuration
+- SSH Host: `phpstack-984109-5614954.cloudwaysapps.com`
+- SSH User: `ehuda`
+- SSH Config: Available in `~/.ssh/config` as `myserver`
+- Application directory: `/home/ehuda/drive-airtable`
+- Service runs on port 5001
+- Use systemd service management
 
-# Or use systemd service (see deploy.sh for service file)
-sudo systemctl start drive-airtable
-sudo systemctl enable drive-airtable
+### Common SSH Commands for Claude
+```bash
+# Check service status
+ssh myserver 'sudo systemctl status drive-airtable'
+
+# View logs
+ssh myserver 'journalctl -u drive-airtable -f'
+
+# Restart service after changes
+ssh myserver 'cd ~/drive-airtable && sudo systemctl restart drive-airtable'
+
+# Update files and restart
+scp app.py myserver:~/drive-airtable/ && ssh myserver 'sudo systemctl restart drive-airtable'
 ```
 
 ## Next Steps for Enhancement
