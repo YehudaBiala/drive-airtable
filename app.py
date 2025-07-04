@@ -274,6 +274,38 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
+def fix_hebrew_text_direction(text):
+    """Fix Hebrew text that may be reversed/mirrored"""
+    import re
+    
+    # Check if text contains Hebrew characters
+    hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+    if not hebrew_pattern.search(text):
+        return text  # Not Hebrew, return as-is
+    
+    logger.info("Detected Hebrew text, attempting to fix direction")
+    
+    # Split into lines and process each line
+    lines = text.split('\n')
+    fixed_lines = []
+    
+    for line in lines:
+        if hebrew_pattern.search(line):
+            # For lines with Hebrew, try reversing if it looks mirrored
+            # Look for patterns that indicate reversed text
+            if any(pattern in line for pattern in ['ךמס', 'ךאראת', 'רובסל', 'יק יק']):
+                # These are common Hebrew words that appear reversed in the OCR
+                # Reverse the entire line
+                fixed_line = line[::-1]
+                logger.info(f"Reversed Hebrew line: '{line[:50]}...' -> '{fixed_line[:50]}...'")
+                fixed_lines.append(fixed_line)
+            else:
+                fixed_lines.append(line)
+        else:
+            fixed_lines.append(line)
+    
+    return '\n'.join(fixed_lines)
+
 def extract_text_from_pdf(file_content):
     """Extract text from PDF using PyPDF2"""
     try:
@@ -286,7 +318,13 @@ def extract_text_from_pdf(file_content):
             if page_text.strip():
                 text += page_text + "\n"
         
-        return text.strip() if text.strip() else None
+        extracted_text = text.strip() if text.strip() else None
+        
+        # Fix Hebrew text direction if needed
+        if extracted_text:
+            extracted_text = fix_hebrew_text_direction(extracted_text)
+        
+        return extracted_text
     except Exception as e:
         logger.error(f"PDF text extraction failed: {str(e)}")
         return None
