@@ -482,6 +482,20 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
     try:
         logger.info(f"Preparing {file_name} for Airtable attachment")
         
+        # Clean filename: remove trailing spaces, dashes, and other unwanted characters
+        clean_file_name = file_name.strip().rstrip(' -').strip()
+        
+        # Ensure file has proper extension based on mime_type if missing
+        file_base, file_ext = os.path.splitext(clean_file_name)
+        if not file_ext and mime_type:
+            if mime_type == 'application/pdf':
+                clean_file_name = f"{file_base}.pdf"
+            elif mime_type.startswith('image/'):
+                image_type = mime_type.split('/')[-1]
+                clean_file_name = f"{file_base}.{image_type}"
+        
+        logger.info(f"Cleaned filename: '{file_name}' -> '{clean_file_name}'")
+        
         # Create attachments directory if it doesn't exist
         attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
         os.makedirs(attachments_dir, exist_ok=True)
@@ -489,8 +503,7 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         # Generate unique filename to avoid conflicts
         import uuid
         unique_id = str(uuid.uuid4())[:8]
-        file_extension = os.path.splitext(file_name)[1]
-        unique_filename = f"{unique_id}_{file_name}"
+        unique_filename = f"{unique_id}_{clean_file_name}"
         
         # Save file to attachments directory
         file_path = os.path.join(attachments_dir, unique_filename)
@@ -508,7 +521,7 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         # Return attachment object with public URL (Airtable can download this)
         return {
             'url': public_url,
-            'filename': file_name,
+            'filename': clean_file_name,
             'size': len(file_content),
             'type': mime_type
         }
