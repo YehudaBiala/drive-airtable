@@ -8,7 +8,7 @@ requirements.txt,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07
 .gitignore,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Git ignore rules
 .env.example,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Environment variables template
 airtable_webhook_vision_v1_security-token.js,/mnt/c/Users/lionh/drive-airtable/,archived,current-session,2025-07-03,Vision processing automation - added security token
-airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-04,Vision processing automation - server-side file upload to Airtable
+airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,fix-attachment-session,2025-07-08,Vision processing automation - fixed attachment object access
 NEXT_SESSION_TASKS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,current-session,2025-07-04,Handoff documentation for next Claude session
 app.py,/mnt/c/Users/lionh/drive-airtable/,updated,fix-attachment-session,2025-07-08,Main Flask application - fixing attachment format
 airtable_rename_automation.js,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,File renaming automation script
