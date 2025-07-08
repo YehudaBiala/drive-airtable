@@ -204,6 +204,8 @@ def download_file_from_drive(file_id):
         file_name = file_metadata.get('name')
         mime_type = file_metadata.get('mimeType')
         
+        logger.info(f"Google Drive filename: '{file_name}' (mime: {mime_type})")
+        
         # Handle Google Workspace files (export as PDF)
         if mime_type.startswith('application/vnd.google-apps'):
             if 'document' in mime_type:
@@ -483,7 +485,11 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         logger.info(f"Preparing {file_name} for Airtable attachment")
         
         # Clean filename: remove trailing spaces, dashes, and other unwanted characters
-        clean_file_name = file_name.strip().rstrip(' -').strip()
+        clean_file_name = file_name.strip()
+        
+        # More aggressive cleaning - remove any trailing combinations of spaces and dashes
+        while clean_file_name.endswith((' ', '-')):
+            clean_file_name = clean_file_name.rstrip(' -').strip()
         
         # Ensure file has proper extension based on mime_type if missing
         file_base, file_ext = os.path.splitext(clean_file_name)
