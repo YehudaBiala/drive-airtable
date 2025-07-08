@@ -178,18 +178,18 @@ def cleanup_old_temp_files(max_age_hours=24):
                     os.remove(filepath)
                     print(f"Cleaned up old temp file: {filename}")
         
-        # Clean up attachments directory (with shorter retention period)
+        # Clean up attachments directory (short retention - automation downloads immediately)
         attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
         if os.path.exists(attachments_dir):
-            # Keep attachments for 48 hours to allow Airtable time to download
-            attachment_max_age = max_age_hours * 2
+            # Keep attachments for only 5 minutes - automation downloads immediately
+            attachment_max_age_seconds = 5 * 60  # 5 minutes
             for filename in os.listdir(attachments_dir):
                 filepath = os.path.join(attachments_dir, filename)
                 if os.path.isfile(filepath):
                     file_time = datetime.datetime.fromtimestamp(os.path.getctime(filepath))
-                    if (current_time - file_time).total_seconds() > (attachment_max_age * 3600):
+                    if (current_time - file_time).total_seconds() > attachment_max_age_seconds:
                         os.remove(filepath)
-                        print(f"Cleaned up old attachment file: {filename}")
+                        print(f"Cleaned up attachment file after 5 minutes: {filename}")
                         
     except Exception as e:
         print(f"Cleanup error: {e}")
@@ -496,6 +496,9 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         file_path = os.path.join(attachments_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(file_content)
+        
+        # Clean up old attachments immediately
+        cleanup_old_temp_files()
         
         # Create public URL that Airtable can access
         public_url = f"http://159.203.191.40:5001/attachments/{unique_filename}"
