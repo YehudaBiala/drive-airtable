@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
 # Import PyPDF2 after adding lib to path
 import PyPDF2
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -168,8 +168,6 @@ def cleanup_old_temp_files(max_age_hours=24):
     """Remove temp files older than max_age_hours"""
     try:
         current_time = datetime.datetime.now()
-        
-        # Clean up main temp directory
         for filename in os.listdir(TEMP_FILES_DIR):
             filepath = os.path.join(TEMP_FILES_DIR, filename)
             if os.path.isfile(filepath):
@@ -177,20 +175,6 @@ def cleanup_old_temp_files(max_age_hours=24):
                 if (current_time - file_time).total_seconds() > (max_age_hours * 3600):
                     os.remove(filepath)
                     print(f"Cleaned up old temp file: {filename}")
-        
-        # Clean up attachments directory (with shorter retention period)
-        attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
-        if os.path.exists(attachments_dir):
-            # Keep attachments for 48 hours to allow Airtable time to download
-            attachment_max_age = max_age_hours * 2
-            for filename in os.listdir(attachments_dir):
-                filepath = os.path.join(attachments_dir, filename)
-                if os.path.isfile(filepath):
-                    file_time = datetime.datetime.fromtimestamp(os.path.getctime(filepath))
-                    if (current_time - file_time).total_seconds() > (attachment_max_age * 3600):
-                        os.remove(filepath)
-                        print(f"Cleaned up old attachment file: {filename}")
-                        
     except Exception as e:
         print(f"Cleanup error: {e}")
 
@@ -478,33 +462,32 @@ def update_airtable_field(record_id, field_name, field_value):
         return False, str(e)
 
 def upload_file_to_airtable(file_content, file_name, mime_type):
-    """Save file locally and return attachment object with public URL"""
+    """Upload file to Airtable and return attachment object"""
     try:
-        logger.info(f"Preparing {file_name} for Airtable attachment")
+        logger.info(f"Uploading {file_name} to Airtable as attachment")
         
-        # Create attachments directory if it doesn't exist
-        attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
-        os.makedirs(attachments_dir, exist_ok=True)
+        # Prepare file for upload
+        files = {
+            'file': (file_name, io.BytesIO(file_content), mime_type)
+        }
         
-        # Generate unique filename to avoid conflicts
-        import uuid
-        unique_id = str(uuid.uuid4())[:8]
-        file_extension = os.path.splitext(file_name)[1]
-        unique_filename = f"{unique_id}_{file_name}"
+        headers = {
+            'Authorization': f'Bearer {AIRTABLE_API_KEY}'
+        }
         
-        # Save file to attachments directory
-        file_path = os.path.join(attachments_dir, unique_filename)
-        with open(file_path, 'wb') as f:
-            f.write(file_content)
+        # Upload to Airtable attachment API
+        # Note: Airtable doesn't have a direct file upload API, we need to upload to a temporary service
+        # For now, let's use a simpler approach - return the base64 for direct use
+        file_base64 = base64.b64encode(file_content).decode('utf-8')
         
-        # Create public URL that Airtable can access
-        public_url = f"http://159.203.191.40:5001/attachments/{unique_filename}"
+        # Create a data URL that Airtable can use
+        data_url = f"data:{mime_type};base64,{file_base64}"
         
-        logger.info(f"Saved {file_name} as {unique_filename}, public URL: {public_url}")
+        logger.info(f"Created data URL for {file_name} (size: {len(file_content)} bytes)")
         
-        # Return attachment object with public URL (Airtable can download this)
+        # Return attachment object with data URL (Airtable AI can process this)
         return {
-            'url': public_url,
+            'url': data_url,
             'filename': file_name,
             'size': len(file_content),
             'type': mime_type
@@ -717,34 +700,6 @@ def health_check():
             'webhook_signature': bool(WEBHOOK_SECRET)
         }
     })
-
-@app.route('/attachments/<filename>', methods=['GET'])
-def serve_attachment(filename):
-    """Serve attachment files for Airtable"""
-    try:
-        # Security: Only allow files in the attachments directory
-        attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
-        file_path = os.path.join(attachments_dir, filename)
-        
-        # Ensure the file exists and is within the attachments directory
-        if not os.path.exists(file_path) or not os.path.commonpath([attachments_dir, file_path]) == attachments_dir:
-            return jsonify({"error": "File not found"}), 404
-        
-        # Determine MIME type
-        mime_type = 'application/octet-stream'
-        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-            mime_type = f'image/{filename.split(".")[-1].lower()}'
-        elif filename.lower().endswith('.pdf'):
-            mime_type = 'application/pdf'
-        elif filename.lower().endswith(('.txt', '.md')):
-            mime_type = 'text/plain'
-        
-        # Send file
-        return send_file(file_path, mimetype=mime_type, as_attachment=False)
-        
-    except Exception as e:
-        logger.error(f"Error serving attachment {filename}: {str(e)}")
-        return jsonify({"error": str(e)}), 500
 
 @app.route('/temp-files', methods=['GET'])
 def list_temp_files():
