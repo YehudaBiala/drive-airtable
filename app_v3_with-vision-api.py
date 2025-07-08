@@ -33,6 +33,7 @@ from flask import Flask, request, jsonify, send_file
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from google.cloud import vision
 from dotenv import load_dotenv
 
 # Configure logging
@@ -138,6 +139,10 @@ def get_drive_service():
     )
     return build('drive', 'v3', credentials=credentials)
 
+def get_vision_client():
+    """Initialize Google Cloud Vision API client"""
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GOOGLE_CREDENTIALS_PATH
+    return vision.ImageAnnotatorClient()
 
 def save_debug_file(file_content, file_name, file_id):
     """Save file to temp directory for debugging if enabled"""
@@ -350,6 +355,104 @@ def extract_text_with_easyocr(file_content, file_name):
         logger.error(f"EasyOCR processing failed: {str(e)}")
         return None
 
+def process_with_vision_api(file_content, file_name):
+    """Process file content with Google Cloud Vision API and return extracted text"""
+    try:
+        extracted_text = ""
+        
+        # Check if it's a PDF file
+        if file_name.lower().endswith('.pdf'):
+            logger.info(f"Processing PDF file: {file_name}")
+            
+            # First try to extract text directly from PDF (for text-based PDFs)
+            pdf_text = extract_text_from_pdf(file_content)
+            if pdf_text and len(pdf_text.strip()) > 10:  # Only use if substantial text found
+                logger.info(f"Successfully extracted {len(pdf_text)} characters from PDF text layer")
+                return pdf_text, None
+            else:
+                logger.info("PDF has no extractable text layer or minimal text, converting to image for Vision API")
+                
+                # Try Vision API directly on PDF (some PDFs work)
+                logger.info("Attempting Vision API directly on PDF content")
+                
+                # If Vision API fails on PDF, try EasyOCR as fallback
+                try:
+                    logger.info("Vision API failed on PDF, trying EasyOCR fallback")
+                    fallback_text = extract_text_with_easyocr(file_content, file_name)
+                    if fallback_text and len(fallback_text.strip()) > 10:
+                        logger.info(f"EasyOCR extracted {len(fallback_text)} characters from PDF")
+                        return fallback_text, None
+                except Exception as e:
+                    logger.warning(f"EasyOCR fallback failed: {str(e)}")
+        
+        # Process with Vision API (for images or image-based PDFs)
+        client = get_vision_client()
+        image = vision.Image(content=file_content)
+        
+        # Try document text detection first (better for documents)
+        logger.info(f"Trying document text detection for {file_name}")
+        response = client.document_text_detection(image=image)
+        if response.full_text_annotation and response.full_text_annotation.text.strip():
+            extracted_text = response.full_text_annotation.text.strip()
+            logger.info(f"Document text detection found {len(extracted_text)} characters")
+        else:
+            logger.info("Document text detection found no text, trying regular OCR")
+            # Fall back to regular text detection (OCR)
+            response = client.text_detection(image=image)
+            texts = response.text_annotations
+            if texts and texts[0].description.strip():
+                extracted_text = texts[0].description.strip()
+                logger.info(f"OCR found {len(extracted_text)} characters")
+            else:
+                logger.info("OCR found no text, trying object detection")
+        
+        # If no text found, try object detection to describe what's in the image
+        if not extracted_text:
+            response = client.object_localization(image=image)
+            objects = response.localized_object_annotations
+            if objects:
+                object_names = [obj.name for obj in objects[:5]]  # Top 5 objects
+                extracted_text = f"Objects detected: {', '.join(object_names)}"
+                logger.info(f"Object detection found: {object_names}")
+            else:
+                logger.info("Object detection found nothing, trying label detection")
+                # Last resort: use label detection
+                response = client.label_detection(image=image)
+                labels = response.label_annotations
+                if labels:
+                    label_names = [label.description for label in labels[:5]]  # Top 5 labels
+                    extracted_text = f"Image contains: {', '.join(label_names)}"
+                    logger.info(f"Label detection found: {label_names}")
+                else:
+                    # Last resort: try EasyOCR fallback
+                    logger.info("All Vision API methods failed, trying EasyOCR as final fallback")
+                    try:
+                        fallback_text = extract_text_with_easyocr(file_content, file_name)
+                        if fallback_text and len(fallback_text.strip()) > 5:
+                            logger.info(f"EasyOCR successfully extracted {len(fallback_text)} characters")
+                            extracted_text = fallback_text
+                        else:
+                            # Final failure message
+                            if file_name.lower().endswith('.pdf'):
+                                extracted_text = f"PDF file: {file_name} - This appears to be a scanned or image-based PDF. Multiple OCR methods were attempted but no readable text was found. This may be a receipt, invoice, or document that requires manual review."
+                            else:
+                                extracted_text = f"No readable text found in {file_name}. Multiple OCR methods were attempted. This may be an image without text, a blank document, or a file type that requires different processing."
+                    except Exception as e:
+                        logger.error(f"EasyOCR final fallback failed: {str(e)}")
+                        # Final failure message
+                        if file_name.lower().endswith('.pdf'):
+                            extracted_text = f"PDF file: {file_name} - This appears to be a scanned or image-based PDF. Multiple OCR methods were attempted but no readable text was found. This may be a receipt, invoice, or document that requires manual review."
+                        else:
+                            extracted_text = f"No readable text found in {file_name}. Multiple OCR methods were attempted. This may be an image without text, a blank document, or a file type that requires different processing."
+                    
+                    logger.warning(f"All OCR methods failed to extract content from {file_name}")
+        
+        logger.info(f"Final result: {len(extracted_text)} characters extracted")
+        return extracted_text, None
+        
+    except Exception as e:
+        logger.error(f"Vision API processing error for {file_name}: {str(e)}")
+        return None, f"Vision API error: {str(e)}"
 
 def update_airtable_field(record_id, field_name, field_value):
     """Update a specific field in an Airtable record"""
@@ -456,7 +559,7 @@ def download_and_analyze():
 
 @app.route('/download-and-analyze-vision', methods=['POST'])
 def download_and_analyze_vision():
-    """Download file from Drive and upload to Airtable for AI processing"""
+    """Download file from Drive, process with Vision API, and update Airtable"""
     try:
         # Validate Bearer token
         auth_header = request.headers.get('Authorization')
@@ -472,7 +575,7 @@ def download_and_analyze_vision():
                 return jsonify({"error": "Invalid signature"}), 401
         
         data = request.json
-        logger.info(f"File processing request: file_id={data.get('file_id')}, record_id={data.get('record_id')}")
+        logger.info(f"Vision processing request: file_id={data.get('file_id')}, record_id={data.get('record_id')}")
         
         # Validate required fields
         is_valid, error_msg = validate_request_data(data, ['record_id'])
@@ -506,26 +609,53 @@ def download_and_analyze_vision():
         
         logger.info(f"Successfully downloaded {file_name} ({len(file_content)} bytes)")
         
+        # Process with Vision API
+        logger.info(f"Processing {file_name} with Vision API")
+        extracted_text, vision_error = process_with_vision_api(file_content, file_name)
+        if vision_error:
+            logger.error(f"Vision API failed for {file_name}: {vision_error}")
+            return jsonify({"error": f"Vision API failed: {vision_error}"}), 500
+        
+        logger.info(f"Vision API extracted {len(extracted_text)} characters from {file_name}")
+        
         # Upload file to Airtable for AI processing
         mime_type = "application/pdf" if file_name.lower().endswith('.pdf') else "image/jpeg"
         file_attachment = upload_file_to_airtable(file_content, file_name, mime_type)
         
-        if not file_attachment:
-            logger.error(f"Failed to upload {file_name} to Airtable")
-            return jsonify({"error": "Failed to upload file for AI processing"}), 500
+        # Check if extraction failed and this is just an error message
+        ocr_failed = extracted_text and ("Multiple OCR methods were attempted" in extracted_text or "no readable text was found" in extracted_text)
         
-        # Return file attachment for AI processing
-        logger.info(f"Successfully uploaded {file_name} to Airtable for AI processing")
+        if ocr_failed:
+            # OCR failed but file is uploaded for AI processing
+            logger.warning(f"OCR failed for {file_name}, but file uploaded to Airtable for AI processing")
+            return jsonify({
+                "success": True,  # Success because file was uploaded even though OCR failed
+                "message": "OCR failed but file uploaded for AI processing",
+                "file_name": file_name,
+                "file_id": file_id,
+                "extracted_text": extracted_text,
+                "file_attachment": file_attachment,  # AI can process this file directly
+                "file_size": len(file_content),
+                "mime_type": mime_type,
+                "ocr_failed": True,
+                "processing_status": "OCR failed but file available for AI analysis"
+            })
+        
+        # Return both extracted text and file attachment for AI processing
+        logger.info(f"Successfully processed {file_name}, returning extracted text and file attachment")
         
         return jsonify({
             "success": True,
-            "message": "File uploaded to Airtable for AI processing",
+            "message": "File processed with Vision API and uploaded to Airtable",
             "file_name": file_name,
             "file_id": file_id,
+            "extracted_text": extracted_text,
+            "extracted_text_length": len(extracted_text),
+            "text_preview": extracted_text[:100] + "..." if len(extracted_text) > 100 else extracted_text,
             "file_attachment": file_attachment,  # AI can process this file directly
             "file_size": len(file_content),
             "mime_type": mime_type,
-            "processing_status": "File uploaded - ready for AI analysis"
+            "processing_status": "File processed and uploaded - ready for AI analysis"
         })
         
     except Exception as e:
@@ -580,10 +710,11 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'service': 'Drive-Airtable Integration API',
+        'service': 'Drive-Airtable Vision Integration API',
         'version': 'PRODUCTION-2025-07-03',
         'timestamp': dt.utcnow().isoformat(),
         'features': {
+            'vision_api': True,
             'drive_integration': True,
             'airtable_integration': True,
             'bearer_token_auth': bool(FLASK_SERVER_TOKEN),
@@ -697,7 +828,7 @@ if __name__ == '__main__':
     
     print("🚀 PRODUCTION Flask server starting...")
     print(f"📊 Health check: http://localhost:{port}/health")
-    print(f"📁  File upload endpoint: POST http://localhost:{port}/download-and-analyze-vision")
+    print(f"👁️  Vision API endpoint: POST http://localhost:{port}/download-and-analyze-vision")
     print(f"⬇️  Download endpoint: POST http://localhost:{port}/download-and-analyze")
     print(f"✏️  Rename endpoint: POST http://localhost:{port}/rename-file")
     print(f"🔐 Security: {'Bearer token required' if FLASK_SERVER_TOKEN else 'No auth'} | {'Webhook signatures' if WEBHOOK_SECRET else 'No signatures'}")
