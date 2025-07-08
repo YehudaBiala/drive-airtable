@@ -502,7 +502,7 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         cleanup_old_temp_files()
         
         # Create public URL that Airtable can access
-        public_url = f"http://159.203.191.40:5001/attachments/{unique_filename}"
+        public_url = f"https://api.officeours.co.il/api/attachments/{unique_filename}"
         
         logger.info(f"Saved {file_name} as {unique_filename}, public URL: {public_url}")
         
