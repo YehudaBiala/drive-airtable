@@ -486,12 +486,12 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
         logger.info(f"Created data URL for {file_name} (size: {len(file_content)} bytes)")
         
         # Return attachment object with data URL (Airtable AI can process this)
-        return {
+        return [{
             'url': data_url,
             'filename': file_name,
             'size': len(file_content),
             'type': mime_type
-        }
+        }]
             
     except Exception as e:
         logger.error(f"File upload error: {str(e)}")
