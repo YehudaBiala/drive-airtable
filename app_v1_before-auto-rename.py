@@ -287,24 +287,6 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
-def delete_file_from_drive(file_id):
-    """Delete file from Google Drive"""
-    try:
-        service = get_drive_service()
-        
-        # Delete the file
-        service.files().delete(fileId=file_id).execute()
-        
-        return True, f"File {file_id} deleted successfully"
-        
-    except Exception as e:
-        error_msg = str(e)
-        if 'insufficient permissions' in error_msg.lower():
-            return False, "Insufficient permissions - service account needs access to this file"
-        elif 'not found' in error_msg.lower():
-            return False, "File not found - may have already been deleted"
-        return False, error_msg
-
 
 def extract_text_from_pdf(file_content):
     """Extract text from PDF using PyPDF2"""
@@ -367,7 +349,6 @@ def extract_text_with_easyocr(file_content, file_name):
     except Exception as e:
         logger.error(f"EasyOCR processing failed: {str(e)}")
         return None
-
 
 
 def update_airtable_field(record_id, field_name, field_value):
@@ -594,54 +575,6 @@ def rename_file():
         logger.error(f"Unexpected error in /rename-file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/auto-rename-file', methods=['POST'])
-def auto_rename_file():
-    """Auto-rename file in Google Drive - receives file_id and new_name directly from webhook"""
-    try:
-        # Validate Bearer token
-        auth_header = request.headers.get('Authorization')
-        if not validate_bearer_token(auth_header):
-            logger.warning("Invalid bearer token for /auto-rename-file")
-            return jsonify({"error": "Unauthorized"}), 401
-        
-        # Validate webhook signature if configured
-        if WEBHOOK_SECRET:
-            signature = request.headers.get('X-Hub-Signature-256')
-            if not validate_webhook_signature(request.get_data(), signature):
-                logger.warning("Invalid webhook signature for /auto-rename-file")
-                return jsonify({"error": "Invalid signature"}), 401
-        
-        data = request.json
-        logger.info(f"Auto-rename request: file_id={data.get('file_id')}, new_name={data.get('new_name')}")
-        
-        # Validate required fields
-        is_valid, error_msg = validate_request_data(data, ['file_id', 'new_name'])
-        if not is_valid:
-            logger.warning(f"Invalid auto-rename request data: {error_msg}")
-            return jsonify({"error": error_msg}), 400
-        
-        file_id = data.get('file_id')
-        new_name = data.get('new_name')
-        
-        logger.info(f"Auto-renaming file {file_id} to '{new_name}'")
-        success, message = rename_file_in_drive(file_id, new_name)
-        
-        if success:
-            logger.info(f"Successfully auto-renamed file {file_id} to '{new_name}'")
-            return jsonify({
-                "success": True, 
-                "message": f"Auto-renamed to: {new_name}",
-                "file_id": file_id,
-                "new_name": new_name
-            })
-        else:
-            logger.error(f"Failed to auto-rename file {file_id}: {message}")
-            return jsonify({"error": f"Auto-rename failed: {message}"}), 500
-            
-    except Exception as e:
-        logger.error(f"Unexpected error in /auto-rename-file: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -654,9 +587,7 @@ def health_check():
             'drive_integration': True,
             'airtable_integration': True,
             'bearer_token_auth': bool(FLASK_SERVER_TOKEN),
-            'webhook_signature': bool(WEBHOOK_SECRET),
-            'auto_rename': True,
-            'auto_delete': True
+            'webhook_signature': bool(WEBHOOK_SECRET)
         }
     })
 
@@ -733,59 +664,6 @@ def cleanup_temp_files():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/auto-delete-file', methods=['DELETE', 'POST'])
-def auto_delete_file():
-    """Delete file from Google Drive based on file_id"""
-    try:
-        # Validate Bearer token
-        auth_header = request.headers.get('Authorization')
-        if not validate_bearer_token(auth_header):
-            logger.warning("Invalid bearer token for /auto-delete-file")
-            return jsonify({"error": "Unauthorized"}), 401
-        
-        # Validate webhook signature if configured
-        if WEBHOOK_SECRET:
-            signature = request.headers.get('X-Hub-Signature-256')
-            if not validate_webhook_signature(request.get_data(), signature):
-                logger.warning("Invalid webhook signature for /auto-delete-file")
-                return jsonify({"error": "Invalid signature"}), 401
-        
-        # Get request data
-        if request.method == 'DELETE':
-            data = request.get_json()
-        else:  # POST
-            data = request.get_json() or request.form.to_dict()
-        
-        if not data:
-            logger.error("No data received in /auto-delete-file request")
-            return jsonify({"error": "No data provided"}), 400
-        
-        # Validate request data
-        is_valid, error_msg = validate_request_data(data, ['file_id'])
-        if not is_valid:
-            logger.warning(f"Invalid auto-delete request data: {error_msg}")
-            return jsonify({"error": error_msg}), 400
-        
-        file_id = data.get('file_id')
-        
-        logger.info(f"Auto-deleting file {file_id}")
-        success, message = delete_file_from_drive(file_id)
-        
-        if success:
-            logger.info(f"Successfully deleted file {file_id}")
-            return jsonify({
-                "success": True, 
-                "message": message,
-                "file_id": file_id
-            })
-        else:
-            logger.error(f"Failed to delete file {file_id}: {message}")
-            return jsonify({"error": message}), 500
-            
-    except Exception as e:
-        logger.error(f"Unexpected error in /auto-delete-file: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
 if __name__ == '__main__':
     # Load environment variables
     load_env()
@@ -822,7 +700,6 @@ if __name__ == '__main__':
     print(f"📁  File upload endpoint: POST http://localhost:{port}/download-and-analyze-vision")
     print(f"⬇️  Download endpoint: POST http://localhost:{port}/download-and-analyze")
     print(f"✏️  Rename endpoint: POST http://localhost:{port}/rename-file")
-    print(f"🔄  Auto-rename endpoint: POST http://localhost:{port}/auto-rename-file")
     print(f"🔐 Security: {'Bearer token required' if FLASK_SERVER_TOKEN else 'No auth'} | {'Webhook signatures' if WEBHOOK_SECRET else 'No signatures'}")
     print(f"📁 Temp files: {TEMP_FILES_DIR} (debug: {'enabled' if DEBUG_SAVE_FILES else 'disabled'})")
     

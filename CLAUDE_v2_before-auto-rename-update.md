@@ -65,17 +65,13 @@ curl http://localhost:5000/health
 
 ### API Endpoints
 1. **GET /health** - Health check endpoint (✅ DEPLOYED)
-2. **POST /download-and-analyze-vision** - Download file, process with Airtable AI, update record (✅ DEPLOYED)
+2. **POST /download-and-analyze-vision** - Download file, process with Vision API, update Airtable
    - Params: `file_id`, `record_id`, `drive_url`
+   - ⏳ **TO IMPLEMENT**: Vision API integration
 3. **POST /rename-file** - Rename file in Google Drive (✅ DEPLOYED)
    - Params: `file_id`, `new_name`
-4. **POST /auto-rename-file** - Automatically rename file using Airtable record data (✅ DEPLOYED)
-   - Params: `record_id`
-5. **DELETE/POST /auto-delete-file** - Delete file from Google Drive (✅ DEPLOYED)
-   - Params: `file_id`
-6. **GET /attachments/<filename>** - Serve files to Airtable (✅ DEPLOYED)
-7. **GET /temp-files** - View temp storage info (✅ DEPLOYED)
-8. **POST /cleanup** - Clean temp files (✅ DEPLOYED)
+4. **GET /temp-files** - View temp storage info (✅ DEPLOYED)
+5. **POST /cleanup** - Clean temp files (✅ DEPLOYED)
 
 ### Workflow
 ```
@@ -85,17 +81,17 @@ Airtable Sync detects new record
     ↓
 Automation 1: Webhook to /download-and-analyze-vision
     ↓
-Flask downloads file and uploads to temp storage
+Flask downloads file and processes with Google Cloud Vision API
     ↓
-Flask creates public URL for Airtable access
+Vision API results inserted into "Vision API Results" field
     ↓
-Airtable AI analyzes file directly from URL
+Airtable AI analyzes the Vision results
     ↓
 AI populates "AI Analysis Results" and "Suggested File Name"
     ↓
-Automation 2: Webhook to /auto-rename-file
+Automation 2: Webhook to /rename-file
     ↓
-Flask retrieves record data and renames file automatically
+Flask renames original file in Google Drive
 ```
 
 ## Airtable Requirements
@@ -111,11 +107,7 @@ Flask retrieves record data and renames file automatically
 ### Required Automations:
 1. **Vision Processing** → Webhook to `/download-and-analyze-vision`
    - Script: `airtable_webhook_vision.js`
-2. **Automatic File Renaming** → Webhook to `/auto-rename-file` 
-   - Script: `airtable_auto_rename_automation.js`
-3. **Automatic File Deletion** → Webhook to `/auto-delete-file`
-   - Script: `auto_delete_script.js`
-4. **Manual File Renaming** → Webhook to `/rename-file` 
+2. **File Renaming** → Webhook to `/rename-file` 
    - Script: `airtable_rename_automation.js`
 
 ## Common Development Tasks

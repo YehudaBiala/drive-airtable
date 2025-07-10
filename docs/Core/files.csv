@@ -1,15 +1,30 @@
 filename,path,status,instance_id,last_modified,description
 google_credentials.json,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Google Cloud service account credentials
-CLAUDE.md,/mnt/c/Users/lionh/drive-airtable/,updated,current-session,2025-07-04,Added SSH deployment commands and removed manual server work requests
-PROJECT_STATUS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,init-session,2025-07-02,Project status tracking
-files.csv,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,current-session,2025-07-04,File tracking for instance coordination - cleaned up
-app.py,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Main Flask application
-requirements.txt,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Python dependencies
-.gitignore,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Git ignore rules
-.env.example,/mnt/c/Users/lionh/drive-airtable/,created,init-session,2025-07-02,Environment variables template
+CLAUDE.md,/mnt/c/Users/lionh/drive-airtable/,updated,doc-update-session-20250708_auto-rename,2025-07-08,Updated with auto-rename endpoint and workflow documentation
+PROJECT_STATUS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,doc-update-session-20250708_auto-rename,2025-07-08,Project status tracking - updated to reflect auto-rename functionality
+PROJECT_STATUS_v1_original-vision-api-docs.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,archived,doc-update-session-20250708_145113,2025-07-08,Archived original project status with Vision API references
+PROJECT_STATUS_v2_current-airtable-ai-docs.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,doc-update-session-20250708_145113,2025-07-08,Detailed current project status with Airtable AI integration
+files.csv,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,doc-update-session-20250708_auto-rename,2025-07-08,File tracking for instance coordination - updated after auto-rename documentation
+app.py,/mnt/c/Users/lionh/drive-airtable/,updated,auto-delete-session-20250710,2025-07-10,Main Flask application - added auto-delete-file endpoint
+app_v1_before-auto-rename.py,/mnt/c/Users/lionh/drive-airtable/,created,auto-rename-session-20250708,2025-07-08,Versioned backup of app.py before auto-rename modifications
+app_v2_complex-auto-rename.py,/mnt/c/Users/lionh/drive-airtable/,created,auto-rename-session-20250708,2025-07-08,Complex version that retrieved record from Airtable (simplified later)
+airtable_auto_rename_automation.js,/mnt/c/Users/lionh/drive-airtable/,updated,auto-rename-session-20250708,2025-07-08,Airtable automation script - uses config.fileId and config.newName from webhook
+requirements.txt,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Python dependencies
+.gitignore,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Git ignore rules
+.env.example,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Environment variables template
 airtable_webhook_vision_v1_security-token.js,/mnt/c/Users/lionh/drive-airtable/,archived,current-session,2025-07-03,Vision processing automation - added security token
-airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,updated,fix-attachment-session,2025-07-08,Vision processing automation - added filename cleaning in JS
-NEXT_SESSION_TASKS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,current-session,2025-07-04,Handoff documentation for next Claude session
-app.py,/mnt/c/Users/lionh/drive-airtable/,updated,fix-attachment-session,2025-07-08,Main Flask application - fixing attachment format
+airtable_webhook_vision.js,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-08,Vision processing automation - current version
+NEXT_SESSION_TASKS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,archived,doc-update-session-20250708_145113,2025-07-08,Handoff documentation for next Claude session - archived as outdated
+NEXT_SESSION_TASKS_v1_outdated-vision-api-issues.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,archived,doc-update-session-20250708_145113,2025-07-08,Archived outdated next session tasks with Vision API issues
+NEXT_SESSION_TASKS_v2_current-enhancement-opportunities.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,doc-update-session-20250708_145113,2025-07-08,Current enhancement opportunities for next session
 airtable_rename_automation.js,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,File renaming automation script
 deploy.sh,/mnt/c/Users/lionh/drive-airtable/,existing,,2025-07-02,Deployment automation script
+rename_drive_file.py,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_145113,2025-07-08,Simple single file rename script for Google Drive
+batch_rename_drive_files.py,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_145113,2025-07-08,Advanced batch file rename script with CSV/JSON support
+interactive_rename.py,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_145113,2025-07-08,User-friendly interactive file rename script
+RENAME_SCRIPTS_README.md,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_145113,2025-07-08,Documentation for Google Drive rename scripts
+test_drive_connection.py,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_145113,2025-07-08,Google Drive connection test script
+PROJECT_STATUS_v3_before-auto-rename-update.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,doc-update-session-20250708_auto-rename,2025-07-08,Versioned backup of PROJECT_STATUS.md before auto-rename functionality update
+CLAUDE_v2_before-auto-rename-update.md,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_auto-rename,2025-07-08,Versioned backup of CLAUDE.md before auto-rename functionality update
+app_v3_before-auto-delete.py,/mnt/c/Users/lionh/drive-airtable/,created,auto-delete-session-20250710,2025-07-10,Versioned backup of app.py before auto-delete modifications
+auto_delete_script.js,/mnt/c/Users/lionh/drive-airtable/,created,another-instance,2025-07-10,Airtable automation script for auto-delete functionality

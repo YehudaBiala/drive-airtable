@@ -287,24 +287,6 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
-def delete_file_from_drive(file_id):
-    """Delete file from Google Drive"""
-    try:
-        service = get_drive_service()
-        
-        # Delete the file
-        service.files().delete(fileId=file_id).execute()
-        
-        return True, f"File {file_id} deleted successfully"
-        
-    except Exception as e:
-        error_msg = str(e)
-        if 'insufficient permissions' in error_msg.lower():
-            return False, "Insufficient permissions - service account needs access to this file"
-        elif 'not found' in error_msg.lower():
-            return False, "File not found - may have already been deleted"
-        return False, error_msg
-
 
 def extract_text_from_pdf(file_content):
     """Extract text from PDF using PyPDF2"""
@@ -369,6 +351,26 @@ def extract_text_with_easyocr(file_content, file_name):
         return None
 
 
+def get_airtable_record(record_id):
+    """Get a specific record from Airtable"""
+    try:
+        url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}/{record_id}"
+        headers = {
+            'Authorization': f'Bearer {AIRTABLE_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            return response.json().get('fields', {})
+        else:
+            logger.error(f"Airtable API error getting record {record_id}: {response.text}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting Airtable record {record_id}: {str(e)}")
+        return None
 
 def update_airtable_field(record_id, field_name, field_value):
     """Update a specific field in an Airtable record"""
@@ -596,7 +598,7 @@ def rename_file():
 
 @app.route('/auto-rename-file', methods=['POST'])
 def auto_rename_file():
-    """Auto-rename file in Google Drive - receives file_id and new_name directly from webhook"""
+    """Auto-rename file in Google Drive based on Airtable record with suggested name"""
     try:
         # Validate Bearer token
         auth_header = request.headers.get('Authorization')
@@ -612,30 +614,72 @@ def auto_rename_file():
                 return jsonify({"error": "Invalid signature"}), 401
         
         data = request.json
-        logger.info(f"Auto-rename request: file_id={data.get('file_id')}, new_name={data.get('new_name')}")
+        logger.info(f"Auto-rename request: record_id={data.get('record_id')}")
         
         # Validate required fields
-        is_valid, error_msg = validate_request_data(data, ['file_id', 'new_name'])
+        is_valid, error_msg = validate_request_data(data, ['record_id'])
         if not is_valid:
             logger.warning(f"Invalid auto-rename request data: {error_msg}")
             return jsonify({"error": error_msg}), 400
         
-        file_id = data.get('file_id')
-        new_name = data.get('new_name')
+        record_id = data.get('record_id')
         
-        logger.info(f"Auto-renaming file {file_id} to '{new_name}'")
-        success, message = rename_file_in_drive(file_id, new_name)
+        # Get record details from Airtable
+        record_data = get_airtable_record(record_id)
+        if not record_data:
+            logger.error(f"Failed to get record {record_id} from Airtable")
+            return jsonify({"error": "Failed to get record from Airtable"}), 500
+        
+        # Extract file_id and suggested name from record
+        file_id = record_data.get('Google Drive File ID')
+        suggested_name = record_data.get('Suggested File Name')
+        original_name = record_data.get('Original File Name')
+        
+        if not file_id:
+            logger.error(f"No Google Drive File ID in record {record_id}")
+            return jsonify({"error": "No Google Drive File ID in record"}), 400
+        
+        if not suggested_name:
+            logger.warning(f"No suggested name in record {record_id}, skipping rename")
+            return jsonify({"success": False, "message": "No suggested name available"}), 200
+        
+        # Skip if suggested name is same as original
+        if suggested_name == original_name:
+            logger.info(f"Suggested name '{suggested_name}' same as original, skipping rename")
+            return jsonify({"success": False, "message": "Suggested name same as original"}), 200
+        
+        logger.info(f"Auto-renaming file {file_id} from '{original_name}' to '{suggested_name}'")
+        success, message = rename_file_in_drive(file_id, suggested_name)
         
         if success:
-            logger.info(f"Successfully auto-renamed file {file_id} to '{new_name}'")
+            logger.info(f"Successfully auto-renamed file {file_id} to '{suggested_name}'")
+            
+            # Update Airtable record with rename status
+            update_success, update_message = update_airtable_field(
+                record_id, 
+                "Rename Status", 
+                f"✅ Renamed to: {suggested_name}"
+            )
+            
+            if not update_success:
+                logger.warning(f"Failed to update rename status: {update_message}")
+            
             return jsonify({
                 "success": True, 
-                "message": f"Auto-renamed to: {new_name}",
-                "file_id": file_id,
-                "new_name": new_name
+                "message": f"Auto-renamed to: {suggested_name}",
+                "original_name": original_name,
+                "new_name": suggested_name
             })
         else:
             logger.error(f"Failed to auto-rename file {file_id}: {message}")
+            
+            # Update Airtable record with error status
+            update_airtable_field(
+                record_id, 
+                "Rename Status", 
+                f"❌ Rename failed: {message}"
+            )
+            
             return jsonify({"error": f"Auto-rename failed: {message}"}), 500
             
     except Exception as e:
@@ -655,8 +699,7 @@ def health_check():
             'airtable_integration': True,
             'bearer_token_auth': bool(FLASK_SERVER_TOKEN),
             'webhook_signature': bool(WEBHOOK_SECRET),
-            'auto_rename': True,
-            'auto_delete': True
+            'auto_rename': True
         }
     })
 
@@ -731,59 +774,6 @@ def cleanup_temp_files():
         cleanup_old_temp_files()
         return jsonify({"success": True, "message": "Cleanup completed"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/auto-delete-file', methods=['DELETE', 'POST'])
-def auto_delete_file():
-    """Delete file from Google Drive based on file_id"""
-    try:
-        # Validate Bearer token
-        auth_header = request.headers.get('Authorization')
-        if not validate_bearer_token(auth_header):
-            logger.warning("Invalid bearer token for /auto-delete-file")
-            return jsonify({"error": "Unauthorized"}), 401
-        
-        # Validate webhook signature if configured
-        if WEBHOOK_SECRET:
-            signature = request.headers.get('X-Hub-Signature-256')
-            if not validate_webhook_signature(request.get_data(), signature):
-                logger.warning("Invalid webhook signature for /auto-delete-file")
-                return jsonify({"error": "Invalid signature"}), 401
-        
-        # Get request data
-        if request.method == 'DELETE':
-            data = request.get_json()
-        else:  # POST
-            data = request.get_json() or request.form.to_dict()
-        
-        if not data:
-            logger.error("No data received in /auto-delete-file request")
-            return jsonify({"error": "No data provided"}), 400
-        
-        # Validate request data
-        is_valid, error_msg = validate_request_data(data, ['file_id'])
-        if not is_valid:
-            logger.warning(f"Invalid auto-delete request data: {error_msg}")
-            return jsonify({"error": error_msg}), 400
-        
-        file_id = data.get('file_id')
-        
-        logger.info(f"Auto-deleting file {file_id}")
-        success, message = delete_file_from_drive(file_id)
-        
-        if success:
-            logger.info(f"Successfully deleted file {file_id}")
-            return jsonify({
-                "success": True, 
-                "message": message,
-                "file_id": file_id
-            })
-        else:
-            logger.error(f"Failed to delete file {file_id}: {message}")
-            return jsonify({"error": message}), 500
-            
-    except Exception as e:
-        logger.error(f"Unexpected error in /auto-delete-file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
