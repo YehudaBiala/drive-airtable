@@ -288,119 +288,37 @@ def rename_file_in_drive(file_id, new_name):
     except Exception as e:
         return False, str(e)
 
-def move_file_to_delete_folder(file_id):
-    """Move file to a 'Delete' subfolder in its parent directory - only if it's a duplicate"""
+def delete_file_from_drive(file_id):
+    """Permanently delete file from Google Drive (supports Shared Drives)"""
     try:
         service = get_drive_service()
-        
-        # Get file metadata to find its parent folder (supportsAllDrives for Shared Drive access)
-        file_metadata = service.files().get(
-            fileId=file_id,
-            fields='id,name,parents',
-            supportsAllDrives=True
-        ).execute()
-        
-        file_name = file_metadata.get('name', 'Unknown')
-        parents = file_metadata.get('parents', [])
-        
-        if not parents:
-            return False, f"File {file_name} has no parent folder"
-        
-        parent_folder_id = parents[0]  # Use first parent
-        
-        # Check for duplicates: find other files with same name in same folder
+
+        # Get file name for logging before deletion
         try:
-            # Search for files with same name in same parent folder
-            duplicate_query = f"name='{file_name}' and '{parent_folder_id}' in parents and trashed=false"
-            duplicate_results = service.files().list(
-                q=duplicate_query,
-                fields="files(id,name,createdTime)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            
-            duplicate_files = duplicate_results.get('files', [])
-            
-            # Remove the current file from the list
-            duplicate_files = [f for f in duplicate_files if f['id'] != file_id]
-            
-            if len(duplicate_files) == 0:
-                logger.info(f"File '{file_name}' is not a duplicate - skipping move")
-                return "skip", f"File '{file_name}' is not a duplicate (no other files with same name in folder)"
-            
-            logger.info(f"File '{file_name}' has {len(duplicate_files)} duplicate(s) in same folder")
-            
-        except Exception as duplicate_check_error:
-            logger.warning(f"Could not check for duplicates: {duplicate_check_error}")
-            # Continue with move if we can't check duplicates
-            pass
-        
-        # Check if 'Delete' folder exists in parent directory
-        delete_folder_name = 'Delete'
-        delete_folder_id = None
-        
-        # Search for existing 'Delete' folder
-        try:
-            results = service.files().list(
-                q=f"name='{delete_folder_name}' and '{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                fields="files(id,name)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            
-            folders = results.get('files', [])
-            if folders:
-                delete_folder_id = folders[0]['id']
-                logger.info(f"Found existing Delete folder: {delete_folder_id}")
-            
-        except Exception as search_error:
-            logger.warning(f"Could not search for Delete folder: {search_error}")
-        
-        # Create 'Delete' folder if it doesn't exist
-        if not delete_folder_id:
-            try:
-                folder_metadata = {
-                    'name': delete_folder_name,
-                    'mimeType': 'application/vnd.google-apps.folder',
-                    'parents': [parent_folder_id]
-                }
-                
-                delete_folder = service.files().create(
-                    body=folder_metadata,
-                    fields='id',
-                    supportsAllDrives=True
-                ).execute()
-                
-                delete_folder_id = delete_folder.get('id')
-                logger.info(f"Created new Delete folder: {delete_folder_id}")
-                
-            except Exception as create_error:
-                logger.error(f"Failed to create Delete folder: {create_error}")
-                return False, f"Could not create Delete folder: {str(create_error)}"
-        
-        # Move file to Delete folder
-        try:
-            # Remove file from current parent and add to Delete folder
-            file = service.files().update(
+            file_metadata = service.files().get(
                 fileId=file_id,
-                addParents=delete_folder_id,
-                removeParents=parent_folder_id,
-                fields='id,parents',
+                fields='name',
                 supportsAllDrives=True
             ).execute()
-            
-            return True, f"Duplicate file '{file_name}' moved to Delete folder"
-            
-        except Exception as move_error:
-            logger.error(f"Failed to move file {file_id}: {move_error}")
-            return False, f"Could not move file: {str(move_error)}"
-        
+            file_name = file_metadata.get('name', 'Unknown')
+        except:
+            file_name = 'Unknown'
+
+        # Delete the file permanently
+        service.files().delete(
+            fileId=file_id,
+            supportsAllDrives=True
+        ).execute()
+
+        logger.info(f"Permanently deleted file '{file_name}' ({file_id})")
+        return True, f"File '{file_name}' permanently deleted"
+
     except Exception as e:
         error_msg = str(e)
         if 'insufficient permissions' in error_msg.lower() or '403' in error_msg:
-            return False, "Insufficient permissions - service account needs Editor access to move files"
+            return False, "Insufficient permissions - service account needs Manager/Owner access to delete files"
         elif 'not found' in error_msg.lower():
-            return False, "File not found"
+            return False, "File not found - may have already been deleted"
         return False, error_msg
 
 
@@ -1069,26 +987,18 @@ def auto_delete_file():
 
         file_id = data.get('file_id')
 
-        logger.info(f"Processing file {file_id} for duplicate check and move")
-        result, message = move_file_to_delete_folder(file_id)
+        logger.info(f"Deleting file {file_id} from Google Drive")
+        success, message = delete_file_from_drive(file_id)
 
-        if result == True:
-            logger.info(f"Successfully moved duplicate file {file_id} to Delete folder")
+        if success:
+            logger.info(f"Successfully deleted file {file_id}")
             return jsonify({
                 "success": True,
                 "message": message,
                 "file_id": file_id
             })
-        elif result == "skip":
-            logger.info(f"Skipped non-duplicate file {file_id}")
-            return jsonify({
-                "success": False,
-                "skipped": True,
-                "message": message,
-                "file_id": file_id
-            })
         else:
-            logger.error(f"Failed to process file {file_id}: {message}")
+            logger.error(f"Failed to delete file {file_id}: {message}")
             return jsonify({"error": message}), 500
 
     except Exception as e:

@@ -36,7 +36,8 @@ Flask server that processes Google Drive files and integrates with Airtable AI f
 - 2026-01-19:
   - ✅ **FIXED**: Added `supportsAllDrives=True` to all Google Drive API calls
   - ✅ **FIXED**: Files in Shared Drives now accessible for rename/download/delete
-  - ✅ **AFFECTED FUNCTIONS**: download_file_from_drive(), rename_file_in_drive(), move_file_to_delete_folder(), check_file_permissions()
+  - ✅ **CHANGED**: `/auto-delete-file` now permanently deletes files (was: move to Delete folder)
+  - ✅ **REPLACED**: `move_file_to_delete_folder()` → `delete_file_from_drive()` for actual deletion
 
 ## Current Working Flow
 
