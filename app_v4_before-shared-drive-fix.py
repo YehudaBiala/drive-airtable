@@ -193,9 +193,9 @@ def download_file_from_drive(file_id):
     """Download file content from Google Drive"""
     try:
         service = get_drive_service()
-
-        # Get file metadata (supportsAllDrives for Shared Drive access)
-        file_metadata = service.files().get(fileId=file_id, supportsAllDrives=True).execute()
+        
+        # Get file metadata
+        file_metadata = service.files().get(fileId=file_id).execute()
         file_name = file_metadata.get('name')
         mime_type = file_metadata.get('mimeType')
         
@@ -272,15 +272,14 @@ def upload_to_airtable_attachment(file_content, file_name, record_id):
         return False, str(e)
 
 def rename_file_in_drive(file_id, new_name):
-    """Rename file in Google Drive (supports Shared Drives)"""
+    """Rename file in Google Drive"""
     try:
         service = get_drive_service()
-
+        
         body = {'name': new_name}
         updated_file = service.files().update(
             fileId=file_id,
-            body=body,
-            supportsAllDrives=True
+            body=body
         ).execute()
         
         return True, f"File renamed to: {updated_file.get('name')}"
@@ -293,11 +292,10 @@ def move_file_to_delete_folder(file_id):
     try:
         service = get_drive_service()
         
-        # Get file metadata to find its parent folder (supportsAllDrives for Shared Drive access)
+        # Get file metadata to find its parent folder
         file_metadata = service.files().get(
-            fileId=file_id,
-            fields='id,name,parents',
-            supportsAllDrives=True
+            fileId=file_id, 
+            fields='id,name,parents'
         ).execute()
         
         file_name = file_metadata.get('name', 'Unknown')
@@ -314,9 +312,7 @@ def move_file_to_delete_folder(file_id):
             duplicate_query = f"name='{file_name}' and '{parent_folder_id}' in parents and trashed=false"
             duplicate_results = service.files().list(
                 q=duplicate_query,
-                fields="files(id,name,createdTime)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
+                fields="files(id,name,createdTime)"
             ).execute()
             
             duplicate_files = duplicate_results.get('files', [])
@@ -343,9 +339,7 @@ def move_file_to_delete_folder(file_id):
         try:
             results = service.files().list(
                 q=f"name='{delete_folder_name}' and '{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                fields="files(id,name)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
+                fields="files(id,name)"
             ).execute()
             
             folders = results.get('files', [])
@@ -367,8 +361,7 @@ def move_file_to_delete_folder(file_id):
                 
                 delete_folder = service.files().create(
                     body=folder_metadata,
-                    fields='id',
-                    supportsAllDrives=True
+                    fields='id'
                 ).execute()
                 
                 delete_folder_id = delete_folder.get('id')
@@ -385,8 +378,7 @@ def move_file_to_delete_folder(file_id):
                 fileId=file_id,
                 addParents=delete_folder_id,
                 removeParents=parent_folder_id,
-                fields='id,parents',
-                supportsAllDrives=True
+                fields='id,parents'
             ).execute()
             
             return True, f"Duplicate file '{file_name}' moved to Delete folder"
@@ -497,29 +489,29 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
     """Save file locally and return attachment object with public URL"""
     try:
         logger.info(f"Using original filename from Google Drive: {file_name}")
-
+        
         # Create attachments directory if it doesn't exist
         attachments_dir = os.path.join(TEMP_FILES_DIR, 'attachments')
         os.makedirs(attachments_dir, exist_ok=True)
-
+        
         # Generate unique filename to avoid conflicts
         import uuid
         unique_id = str(uuid.uuid4())[:8]
         unique_filename = f"{unique_id}_{file_name}"
-
+        
         # Save file to attachments directory
         file_path = os.path.join(attachments_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(file_content)
-
+        
         # Clean up old attachments immediately
         cleanup_old_temp_files()
-
+        
         # Create public URL that Airtable can access
         public_url = f"https://api.officeours.co.il/api/attachments/{unique_filename}"
-
+        
         logger.info(f"Saved {file_name} as {unique_filename}, public URL: {public_url}")
-
+        
         # Return attachment object with public URL (Airtable can download this)
         return {
             'url': public_url,
@@ -527,146 +519,10 @@ def upload_file_to_airtable(file_content, file_name, mime_type):
             'size': len(file_content),
             'type': mime_type
         }
-
+            
     except Exception as e:
         logger.error(f"File upload error: {str(e)}")
         return None
-
-def download_from_url(url, timeout=30):
-    """Download file from URL (e.g., Airtable attachment URL)"""
-    try:
-        logger.info(f"Downloading file from URL: {url[:100]}...")
-
-        # Download file with timeout
-        response = requests.get(url, timeout=timeout, stream=True)
-        response.raise_for_status()
-
-        # Get filename from Content-Disposition header or URL
-        filename = None
-        if 'Content-Disposition' in response.headers:
-            content_disposition = response.headers['Content-Disposition']
-            if 'filename=' in content_disposition:
-                filename = content_disposition.split('filename=')[1].strip('"\'')
-
-        # If no filename from header, try URL query parameters (for Airtable URLs)
-        if not filename:
-            from urllib.parse import urlparse, parse_qs, unquote
-            parsed_url = urlparse(url)
-
-            # Check for response-content-disposition parameter (Airtable uses this)
-            query_params = parse_qs(parsed_url.query)
-            if 'response-content-disposition' in query_params:
-                disp = query_params['response-content-disposition'][0]
-                # Parse: attachment;filename*=UTF-8''IR1361109.pdf
-                if "filename*=" in disp or "filename=" in disp:
-                    # Handle RFC 5987 encoded filenames (filename*=UTF-8''name.pdf)
-                    if "filename*=" in disp:
-                        fname_part = disp.split("filename*=")[1]
-                        if "''" in fname_part:
-                            filename = unquote(fname_part.split("''", 1)[1])
-                        else:
-                            filename = unquote(fname_part)
-                    else:
-                        filename = disp.split("filename=")[1].strip('"\'')
-
-            # Fallback: try path
-            if not filename:
-                filename = unquote(parsed_url.path.split('/')[-1])
-
-        # Fallback to generic name if still no filename
-        if not filename or filename == '':
-            filename = f"attachment_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-
-        # Read file content
-        file_content = response.content
-
-        # Determine mime type from content or filename
-        mime_type = response.headers.get('Content-Type', 'application/octet-stream')
-
-        # Fix mime type if it's wrong but we can detect from filename
-        if filename.lower().endswith('.pdf') and 'text' in mime_type:
-            mime_type = 'application/pdf'
-        elif filename.lower().endswith(('.jpg', '.jpeg')) and 'text' in mime_type:
-            mime_type = 'image/jpeg'
-        elif filename.lower().endswith('.png') and 'text' in mime_type:
-            mime_type = 'image/png'
-
-        logger.info(f"Downloaded {len(file_content)} bytes, filename: {filename}, mime: {mime_type}")
-
-        return file_content, filename, mime_type, None
-
-    except requests.exceptions.Timeout:
-        error_msg = f"Download timeout after {timeout} seconds"
-        logger.error(error_msg)
-        return None, None, None, error_msg
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Download failed: {str(e)}"
-        logger.error(error_msg)
-        return None, None, None, error_msg
-    except Exception as e:
-        error_msg = f"Unexpected download error: {str(e)}"
-        logger.error(error_msg)
-        return None, None, None, error_msg
-
-def upload_to_drive(file_content, file_name, folder_id=None, mime_type=None):
-    """Upload file to Google Drive folder"""
-    try:
-        from googleapiclient.http import MediaIoBaseUpload
-
-        service = get_drive_service()
-
-        # Prepare file metadata
-        file_metadata = {'name': file_name}
-
-        # Add parent folder if specified
-        if folder_id:
-            file_metadata['parents'] = [folder_id]
-            logger.info(f"Uploading '{file_name}' to folder: {folder_id}")
-        else:
-            logger.info(f"Uploading '{file_name}' to root (no folder specified)")
-
-        # Determine MIME type if not provided
-        if not mime_type:
-            mime_type = 'application/octet-stream'
-
-        # Create media upload object
-        file_stream = io.BytesIO(file_content)
-        media = MediaIoBaseUpload(file_stream, mimetype=mime_type, resumable=True)
-
-        # Upload file
-        # Use supportsAllDrives=True to allow service accounts to upload to shared folders
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id, name, webViewLink, mimeType',
-            supportsAllDrives=True
-        ).execute()
-
-        file_id = file.get('id')
-        file_url = file.get('webViewLink')
-
-        logger.info(f"Successfully uploaded '{file_name}' to Drive. File ID: {file_id}")
-
-        return True, {
-            'file_id': file_id,
-            'file_name': file.get('name'),
-            'file_url': file_url,
-            'mime_type': file.get('mimeType')
-        }
-
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Drive upload failed for '{file_name}': {error_msg}")
-
-        # Provide helpful error messages
-        if 'insufficient permissions' in error_msg.lower() or '403' in error_msg:
-            return False, "Insufficient permissions - service account needs write access to the folder"
-        elif 'not found' in error_msg.lower() or '404' in error_msg:
-            return False, "Folder not found - check folder_id is correct and shared with service account"
-        elif 'storage quota' in error_msg.lower() or 'quota' in error_msg.lower():
-            return False, "Google Drive storage quota exceeded"
-        else:
-            return False, error_msg
 
 @app.route('/download-and-analyze', methods=['POST'])
 def download_and_analyze():
@@ -882,7 +738,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Drive-Airtable Integration API',
-        'version': 'PRODUCTION-2026-01-18',
+        'version': 'PRODUCTION-2025-07-03',
         'timestamp': dt.utcnow().isoformat(),
         'features': {
             'drive_integration': True,
@@ -890,8 +746,7 @@ def health_check():
             'bearer_token_auth': bool(FLASK_SERVER_TOKEN),
             'webhook_signature': bool(WEBHOOK_SECRET),
             'auto_rename': True,
-            'auto_delete': True,
-            'upload_to_drive': True
+            'auto_delete': True
         }
     })
 
@@ -987,11 +842,11 @@ def check_file_permissions():
         try:
             service = get_drive_service()
             
-            # Try to get file metadata (read permission test) - supportsAllDrives for Shared Drives
-            file_info = service.files().get(fileId=file_id, supportsAllDrives=True).execute()
-
+            # Try to get file metadata (read permission test)
+            file_info = service.files().get(fileId=file_id).execute()
+            
             # Try to get permissions list (shows what access we have)
-            permissions = service.permissions().list(fileId=file_id, supportsAllDrives=True).execute()
+            permissions = service.permissions().list(fileId=file_id).execute()
             
             # Check what our service account can do
             service_email = None
@@ -1043,39 +898,39 @@ def auto_delete_file():
         if not validate_bearer_token(auth_header):
             logger.warning("Invalid bearer token for /auto-delete-file")
             return jsonify({"error": "Unauthorized"}), 401
-
+        
         # Validate webhook signature if configured
         if WEBHOOK_SECRET:
             signature = request.headers.get('X-Hub-Signature-256')
             if not validate_webhook_signature(request.get_data(), signature):
                 logger.warning("Invalid webhook signature for /auto-delete-file")
                 return jsonify({"error": "Invalid signature"}), 401
-
+        
         # Get request data
         if request.method == 'DELETE':
             data = request.get_json()
         else:  # POST
             data = request.get_json() or request.form.to_dict()
-
+        
         if not data:
             logger.error("No data received in /auto-delete-file request")
             return jsonify({"error": "No data provided"}), 400
-
+        
         # Validate request data
         is_valid, error_msg = validate_request_data(data, ['file_id'])
         if not is_valid:
             logger.warning(f"Invalid auto-delete request data: {error_msg}")
             return jsonify({"error": error_msg}), 400
-
+        
         file_id = data.get('file_id')
-
+        
         logger.info(f"Processing file {file_id} for duplicate check and move")
         result, message = move_file_to_delete_folder(file_id)
-
+        
         if result == True:
             logger.info(f"Successfully moved duplicate file {file_id} to Delete folder")
             return jsonify({
-                "success": True,
+                "success": True, 
                 "message": message,
                 "file_id": file_id
             })
@@ -1090,144 +945,9 @@ def auto_delete_file():
         else:
             logger.error(f"Failed to process file {file_id}: {message}")
             return jsonify({"error": message}), 500
-
+            
     except Exception as e:
         logger.error(f"Unexpected error in /auto-delete-file: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/upload-to-drive', methods=['POST'])
-def upload_to_drive_endpoint():
-    """Upload file(s) from Airtable attachment URLs to Google Drive folder"""
-    try:
-        # Validate Bearer token
-        auth_header = request.headers.get('Authorization')
-        if not validate_bearer_token(auth_header):
-            logger.warning("Invalid bearer token for /upload-to-drive")
-            return jsonify({"error": "Unauthorized"}), 401
-
-        # Validate webhook signature if configured
-        if WEBHOOK_SECRET:
-            signature = request.headers.get('X-Hub-Signature-256')
-            if not validate_webhook_signature(request.get_data(), signature):
-                logger.warning("Invalid webhook signature for /upload-to-drive")
-                return jsonify({"error": "Invalid signature"}), 401
-
-        data = request.json
-
-        # Validate required fields
-        # Note: attachment_url or attachment_urls required (at least one)
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-
-        # Support both single URL and array of URLs
-        attachment_urls = data.get('attachment_urls', [])
-        single_url = data.get('attachment_url')
-
-        if single_url:
-            attachment_urls = [single_url]
-
-        if not attachment_urls:
-            return jsonify({"error": "attachment_url or attachment_urls required"}), 400
-
-        # Optional parameters
-        folder_id = data.get('folder_id')  # Google Drive folder ID
-        record_id = data.get('record_id')  # Airtable record ID for tracking
-        filenames = data.get('filenames', [])  # Optional custom filenames
-
-        logger.info(f"Upload request: {len(attachment_urls)} file(s), folder_id={folder_id}, record_id={record_id}")
-
-        # Process each attachment
-        results = []
-        errors = []
-
-        for idx, url in enumerate(attachment_urls):
-            try:
-                # Use custom filename if provided, otherwise extract from URL
-                custom_filename = filenames[idx] if idx < len(filenames) else None
-
-                # Download from Airtable URL
-                logger.info(f"Processing attachment {idx + 1}/{len(attachment_urls)}")
-                file_content, filename, mime_type, download_error = download_from_url(url)
-
-                if download_error:
-                    errors.append({
-                        "url": url[:100],
-                        "error": download_error,
-                        "index": idx
-                    })
-                    continue
-
-                # Use custom filename if provided
-                if custom_filename:
-                    # Preserve extension from original filename
-                    original_ext = filename.split('.')[-1] if '.' in filename else ''
-                    custom_ext = custom_filename.split('.')[-1] if '.' in custom_filename else ''
-
-                    # If custom filename has no extension but original does, add it
-                    if not custom_ext and original_ext:
-                        filename = f"{custom_filename}.{original_ext}"
-                    else:
-                        filename = custom_filename
-
-                # Upload to Google Drive
-                success, upload_result = upload_to_drive(file_content, filename, folder_id, mime_type)
-
-                if success:
-                    result_data = {
-                        "success": True,
-                        "index": idx,
-                        "source_url": url[:100],
-                        **upload_result
-                    }
-                    results.append(result_data)
-                    logger.info(f"Successfully uploaded file {idx + 1}: {upload_result.get('file_id')}")
-                else:
-                    errors.append({
-                        "url": url[:100],
-                        "error": upload_result,
-                        "index": idx
-                    })
-                    logger.error(f"Failed to upload file {idx + 1}: {upload_result}")
-
-            except Exception as file_error:
-                errors.append({
-                    "url": url[:100],
-                    "error": str(file_error),
-                    "index": idx
-                })
-                logger.error(f"Error processing file {idx + 1}: {str(file_error)}")
-
-        # Prepare response
-        response_data = {
-            "success": len(results) > 0,
-            "total_files": len(attachment_urls),
-            "uploaded_count": len(results),
-            "error_count": len(errors),
-            "results": results
-        }
-
-        if record_id:
-            response_data["record_id"] = record_id
-
-        if folder_id:
-            response_data["folder_id"] = folder_id
-
-        if errors:
-            response_data["errors"] = errors
-
-        # Return appropriate status code
-        if len(results) == 0:
-            # All uploads failed
-            return jsonify(response_data), 500
-        elif len(errors) > 0:
-            # Partial success
-            return jsonify(response_data), 207  # Multi-Status
-        else:
-            # Complete success
-            return jsonify(response_data), 200
-
-    except Exception as e:
-        logger.error(f"Unexpected error in /upload-to-drive: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
@@ -1254,20 +974,19 @@ if __name__ == '__main__':
     
     # Log startup information
     logger.info(f"Starting PRODUCTION Drive-Airtable Vision Integration Server")
-    logger.info(f"Version: 2026-01-18 (Added Airtable-to-Drive upload endpoint)")
+    logger.info(f"Version: 2025-07-03 (Security improvements added)")
     logger.info(f"Port: {port}")
     logger.info(f"Debug mode: {'enabled' if DEBUG_SAVE_FILES else 'disabled'}")
     logger.info(f"Bearer token auth: {'enabled' if FLASK_SERVER_TOKEN else 'disabled'}")
     logger.info(f"Webhook signature: {'enabled' if WEBHOOK_SECRET else 'disabled'}")
     logger.info(f"Temp files directory: {TEMP_FILES_DIR}")
-
+    
     print("🚀 PRODUCTION Flask server starting...")
     print(f"📊 Health check: http://localhost:{port}/health")
     print(f"📁  File upload endpoint: POST http://localhost:{port}/download-and-analyze-vision")
     print(f"⬇️  Download endpoint: POST http://localhost:{port}/download-and-analyze")
     print(f"✏️  Rename endpoint: POST http://localhost:{port}/rename-file")
     print(f"🔄  Auto-rename endpoint: POST http://localhost:{port}/auto-rename-file")
-    print(f"⬆️  Upload to Drive endpoint: POST http://localhost:{port}/upload-to-drive")
     print(f"🔐 Security: {'Bearer token required' if FLASK_SERVER_TOKEN else 'No auth'} | {'Webhook signatures' if WEBHOOK_SECRET else 'No signatures'}")
     print(f"📁 Temp files: {TEMP_FILES_DIR} (debug: {'enabled' if DEBUG_SAVE_FILES else 'disabled'})")
     

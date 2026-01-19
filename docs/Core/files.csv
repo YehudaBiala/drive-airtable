@@ -28,3 +28,19 @@ PROJECT_STATUS_v3_before-auto-rename-update.md,/mnt/c/Users/lionh/drive-airtable
 CLAUDE_v2_before-auto-rename-update.md,/mnt/c/Users/lionh/drive-airtable/,created,doc-update-session-20250708_auto-rename,2025-07-08,Versioned backup of CLAUDE.md before auto-rename functionality update
 app_v3_before-auto-delete.py,/mnt/c/Users/lionh/drive-airtable/,created,auto-delete-session-20250710,2025-07-10,Versioned backup of app.py before auto-delete modifications
 auto_delete_script.js,/mnt/c/Users/lionh/drive-airtable/,created,another-instance,2025-07-10,Airtable automation script for auto-delete functionality
+delete.js,/mnt/c/Users/lionh/drive-airtable/,updated,delete-script-update-20250908,2025-09-08,Updated from duplicate record remover to Google Drive file deletion via Flask API with comprehensive permission handling and diagnostic reporting
+delete_v1_original-duplicate-remover.js,/mnt/c/Users/lionh/drive-airtable/,created,delete-script-update-20250908,2025-09-08,Versioned backup of original delete.js that removed duplicate Airtable records
+app_v1_before-airtable-upload-endpoint.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Versioned backup of app.py before adding Airtable-to-Drive upload endpoint
+app.py,/mnt/c/Users/lionh/drive-airtable/,updated,airtable-upload-session-20260118,2026-01-18,Main Flask application - added /upload-to-drive endpoint for Airtable attachment uploads
+PROJECT_STATUS_v4_before-upload-to-drive.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,created,airtable-upload-session-20260118,2026-01-18,Versioned backup of PROJECT_STATUS.md before upload-to-drive feature documentation
+PROJECT_STATUS.md,/mnt/c/Users/lionh/drive-airtable/docs/Core/,updated,shared-drive-fix-20260119,2026-01-19,Project status tracking - added Shared Drive support fix documentation
+app.py,/mnt/c/Users/lionh/drive-airtable/,updated,shared-drive-fix-20260119,2026-01-19,Main Flask application - added supportsAllDrives=True for Shared Drive compatibility
+app_v4_before-shared-drive-fix.py,/mnt/c/Users/lionh/drive-airtable/,created,shared-drive-fix-20260119,2026-01-19,Versioned backup of app.py before Shared Drive fix
+airtable_upload_to_drive_automation.js,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Airtable automation script for uploading attachments to Google Drive via Flask webhook
+test_all_endpoints.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Comprehensive test suite for all Flask endpoints
+upload_service.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Standalone upload service module (isolated implementation)
+upload_app.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Standalone Flask app for upload service (alternative deployment option)
+DEPLOYMENT_SUMMARY_2026-01-18.md,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Complete deployment summary with testing instructions and API documentation
+test_upload_to_drive.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Python test script for upload endpoint
+test_upload_with_local_file.py,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Python test script using local files to simulate full workflow
+test_upload_to_drive.sh,/mnt/c/Users/lionh/drive-airtable/,created,airtable-upload-session-20260118,2026-01-18,Bash test script for upload endpoint
