@@ -322,6 +322,79 @@ def delete_file_from_drive(file_id):
         return False, error_msg
 
 
+def _find_or_create_folder(service, name, parent_id):
+    """Find or create a single folder inside parent_id. Returns folder_id."""
+    query = (
+        f"name='{name}' and mimeType='application/vnd.google-apps.folder' "
+        f"and '{parent_id}' in parents and trashed=false"
+    )
+    results = service.files().list(
+        q=query,
+        fields='files(id, name)',
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
+    ).execute()
+    folders = results.get('files', [])
+
+    if folders:
+        logger.info(f"Found existing folder '{name}' ({folders[0]['id']})")
+        return folders[0]['id']
+
+    folder = service.files().create(
+        body={'name': name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [parent_id]},
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
+    logger.info(f"Created folder '{name}' ({folder['id']})")
+    return folder['id']
+
+
+def move_file_in_drive(file_id, folder_name, parent_folder_id='root'):
+    """Move a file to a (nested) folder path in Google Drive.
+
+    folder_name may be a slash-separated path, e.g. "Clients/Acme/2024".
+    Each segment is found-or-created in sequence starting from parent_folder_id.
+    """
+    try:
+        service = get_drive_service()
+
+        # Get file metadata (name + current parents)
+        file_metadata = service.files().get(
+            fileId=file_id,
+            fields='name,parents',
+            supportsAllDrives=True
+        ).execute()
+        file_name = file_metadata.get('name', 'Unknown')
+        current_parents = ','.join(file_metadata.get('parents', []))
+
+        # Walk the path segments, find-or-create each level
+        segments = [s.strip() for s in folder_name.split('/') if s.strip()]
+        current_parent = parent_folder_id
+        for segment in segments:
+            current_parent = _find_or_create_folder(service, segment, current_parent)
+        folder_id = current_parent
+
+        # Move: add new parent, remove old ones
+        service.files().update(
+            fileId=file_id,
+            addParents=folder_id,
+            removeParents=current_parents,
+            fields='id,parents',
+            supportsAllDrives=True
+        ).execute()
+
+        logger.info(f"Moved '{file_name}' ({file_id}) → '{folder_name}' ({folder_id})")
+        return True, f"File '{file_name}' moved to '{folder_name}'", folder_id
+
+    except Exception as e:
+        error_msg = str(e)
+        if 'insufficient permissions' in error_msg.lower() or '403' in error_msg:
+            return False, "Insufficient permissions - service account needs access to the file and destination", None
+        elif 'not found' in error_msg.lower():
+            return False, "File not found", None
+        return False, error_msg, None
+
+
 def extract_text_from_pdf(file_content):
     """Extract text from PDF using PyPDF2"""
     try:
@@ -1004,6 +1077,56 @@ def auto_delete_file():
     except Exception as e:
         logger.error(f"Unexpected error in /auto-delete-file: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/auto-move-file', methods=['POST'])
+def auto_move_file():
+    """Move a file to a named folder in Google Drive (creates folder if it doesn't exist)"""
+    try:
+        # Validate Bearer token
+        auth_header = request.headers.get('Authorization')
+        if not validate_bearer_token(auth_header):
+            logger.warning("Invalid bearer token for /auto-move-file")
+            return jsonify({"error": "Unauthorized"}), 401
+
+        # Validate webhook signature if configured
+        if WEBHOOK_SECRET:
+            signature = request.headers.get('X-Hub-Signature-256')
+            if not validate_webhook_signature(request.get_data(), signature):
+                logger.warning("Invalid webhook signature for /auto-move-file")
+                return jsonify({"error": "Invalid signature"}), 401
+
+        data = request.get_json() or request.form.to_dict()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        is_valid, error_msg = validate_request_data(data, ['file_id', 'folder_name'])
+        if not is_valid:
+            logger.warning(f"Invalid auto-move request data: {error_msg}")
+            return jsonify({"error": error_msg}), 400
+
+        file_id = data.get('file_id')
+        folder_name = data.get('folder_name')
+        parent_folder_id = data.get('parent_folder_id') or 'root'
+
+        logger.info(f"Moving file {file_id} → folder '{folder_name}'")
+        success, message, folder_id = move_file_in_drive(file_id, folder_name, parent_folder_id)
+
+        if success:
+            logger.info(f"Successfully moved file {file_id}")
+            return jsonify({
+                "success": True,
+                "message": message,
+                "file_id": file_id,
+                "folder_id": folder_id
+            })
+        else:
+            logger.error(f"Failed to move file {file_id}: {message}")
+            return jsonify({"error": message}), 500
+
+    except Exception as e:
+        logger.error(f"Unexpected error in /auto-move-file: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/upload-to-drive', methods=['POST'])
 def upload_to_drive_endpoint():

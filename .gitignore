@@ -37,4 +37,5 @@ logs/
 # Temporary files
 *.tmp
 *.temp
-.cache/
+.cache/google_credentials_v2.json
+google_credentials*.json
